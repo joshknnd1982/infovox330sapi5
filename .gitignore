@@ -1,0 +1,21 @@
+# Build trees and staging. output\ in particular holds directory junctions into bin\,
+# which git would happily follow and commit a second copy of the voice data through.
+build/
+build_x86/
+build_x64/
+output/
+
+# Build output. The installer is ~145 MB, past GitHub's 100 MB per-file limit, so it ships
+# as a release asset rather than in the repository; tools\build_all.ps1 regenerates it in
+# about two minutes. The accessibility probe is a throwaway payload-less build of the same
+# wizard, rebuilt whenever tools\check_installer_a11y.ps1 runs.
+dist/
+
+# Test output from the sample renderer and the test harness.
+samples_sapi/
+samples_sapi64/
+samples_fix/
+sapitest/
+
+__pycache__/
+*.log

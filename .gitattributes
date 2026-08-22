@@ -1,0 +1,21 @@
+# Most of this repository by weight is voice data and engine binaries. Marking them
+# explicitly means git never applies end-of-line conversion to them, whatever the
+# checkout platform's defaults are.
+* text=auto
+
+*.ddb  binary
+*.phm  binary
+*.ivx  binary
+*.dll  binary
+*.exe  binary
+*.wav  binary
+*.bin  binary
+*.ico  binary
+
+# Batch files are read by cmd.exe, which is unreliable with LF-only line endings in
+# parenthesised blocks and for loops.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Inno Setup compiles these; keep them in the form the compiler expects.
+*.iss  text eol=crlf

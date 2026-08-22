@@ -1,0 +1,49 @@
+About this installation
+=======================
+
+This installs the Infovox 330 speech engine and makes its sixteen voices available to
+every SAPI 5 application on this computer - screen readers, reading tools, anything that
+uses Windows speech.
+
+What gets installed
+-------------------
+
+  * The Infovox 330 engine and the voice data for the languages you choose.
+  * A 32-bit SAPI 5 interface, for 32-bit applications.
+  * A 64-bit SAPI 5 interface, for 64-bit applications. The engine itself has no 64-bit
+    build and never will, so the 64-bit interface runs the engine in a small helper
+    process and passes the audio back. Applications do not notice the difference.
+
+The sixteen voices, in twelve languages:
+
+  American English   Larry, Lucy          Icelandic   Snorri
+  British English    Roger                Italian     Roberto
+  Danish             Poul                 Norwegian   Trygve, Vegard
+  Dutch              Rik                  Spanish     Juan
+  Finnish            Matti                Swedish     AnnMarie, Ingmar
+  French             Pierre
+  German             Gerhard, Helga
+
+Administrator rights are required, because SAPI 5 only reads its list of voices from the
+machine-wide part of the registry. Two class registrations and one voice-list key are
+written; nothing else touches the registry. The engine itself reads no registry at all -
+its settings are supplied from a file in the installation folder.
+
+Logs
+----
+
+The installer writes a full log and saves a copy in the installation folder as
+install.log. The speech engine writes its own logs to:
+
+    %LOCALAPPDATA%\Infovox330 SAPI5\Logs
+
+Set INFOVOX330_LOG_LEVEL to off, error, warn, info, debug or trace to change how much
+detail is recorded, and INFOVOX330_LOG_DIR to write them somewhere else.
+
+A note on the engine files
+--------------------------
+
+The Infovox 330 engine and its voice data are commercial software belonging to their
+publisher. This installer packages files that were supplied with it; it does not grant
+any licence to them. Install this only on a machine where you are entitled to use
+Infovox 330.
