@@ -175,6 +175,7 @@ private:
         request.speed = params.speed;
         request.pitch = params.pitch;
         request.volume = params.volume;
+        request.realtime = params.realtime;
         request.text_chars = static_cast<uint32_t>(params.text.size());
         wcsncpy_s(request.abort_event, abort_name_.c_str(), _TRUNCATE);
 

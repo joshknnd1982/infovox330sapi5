@@ -10,6 +10,7 @@
     output\
       Infovox330SAPI5.dll      32-bit SAPI 5 engine
       Infovox330Server.exe     32-bit helper for the 64-bit engine
+      Infovox330Config.exe     the configuration utility
       infovox_host.dll         registry-virtualising shim
       ivx_render.exe           sample renderer
       ivx_sapitest.exe         32-bit test harness
@@ -39,7 +40,7 @@ foreach ($required in @($x86, $x64, $data)) {
 # The helper lingers for a minute after the last client disconnects, and while it is alive
 # its executable cannot be replaced. Stopping it is safe: the next 64-bit client starts a
 # fresh one on demand.
-Get-Process -Name 'Infovox330Server' -ErrorAction SilentlyContinue |
+Get-Process -Name 'Infovox330Server', 'Infovox330Config' -ErrorAction SilentlyContinue |
     Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 300
 
@@ -48,6 +49,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Output 'x64') | Out-Null
 
 Copy-Item (Join-Path $x86 'Infovox330SAPI5.dll')  $Output -Force
 Copy-Item (Join-Path $x86 'Infovox330Server.exe') $Output -Force
+Copy-Item (Join-Path $x86 'Infovox330Config.exe') $Output -Force
 Copy-Item (Join-Path $x86 'ivx_render.exe')       $Output -Force
 Copy-Item (Join-Path $x86 'ivx_sapitest.exe')     $Output -Force
 Copy-Item (Join-Path $x86 'ivx_speak.exe')        $Output -Force

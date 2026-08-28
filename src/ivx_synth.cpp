@@ -27,10 +27,15 @@ int AttrRange::to_percent(DWORD value) const
 
 DWORD AttrRange::scaled(double factor) const
 {
+    return scaled_from(default_value, factor);
+}
+
+DWORD AttrRange::scaled_from(DWORD base, double factor) const
+{
     if (!supported || max_value <= min_value) {
         return default_value;
     }
-    const double value = static_cast<double>(default_value) * factor + 0.5;
+    const double value = static_cast<double>(base) * factor + 0.5;
     if (value <= static_cast<double>(min_value)) {
         return min_value;
     }
@@ -38,6 +43,21 @@ DWORD AttrRange::scaled(double factor) const
         return max_value;
     }
     return static_cast<DWORD>(value);
+}
+
+DWORD AttrRange::clamped(int value) const
+{
+    if (!supported || value < 0) {
+        return default_value;
+    }
+    const DWORD v = static_cast<DWORD>(value);
+    if (v < min_value) {
+        return min_value;
+    }
+    if (v > max_value) {
+        return max_value;
+    }
+    return v;
 }
 
 void apply_volume(void* samples, std::size_t bytes, int percent, WORD bits_per_sample)

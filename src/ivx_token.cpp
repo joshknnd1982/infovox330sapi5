@@ -23,8 +23,13 @@ voice_token::voice_token(const VoiceDesc& voice)
     attributes_[L"Language"] = voice.sapi_language_attribute();
     attributes_[L"Gender"] = voice.sapi_gender();
     attributes_[L"Age"] = voice.sapi_age();
-    attributes_[kAttrSpeaker] = voice.speaker;
+    // The token name, not the engine speaker: a user-defined voice has to come back as
+    // itself in SetObjectToken, or its settings would be looked up under the wrong name.
+    attributes_[kAttrSpeaker] = voice.token_name();
     attributes_[kAttrModeGuid] = mode;
+    if (voice.is_custom) {
+        attributes_[kAttrBaseSpeaker] = voice.base_speaker;
+    }
 }
 
 STDMETHODIMP voice_token::OpenKey(LPCWSTR pszSubKeyName, ISpDataKey** ppSubKey)

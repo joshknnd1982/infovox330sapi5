@@ -1,5 +1,6 @@
 #include "ivx_voices.hpp"
 
+#include "ivx_config.hpp"
 #include "ivx_log.hpp"
 #include "ivx_paths.hpp"
 
@@ -11,8 +12,11 @@ namespace ivx {
 namespace {
 
 std::mutex g_catalogue_mutex;
+std::vector<VoiceDesc> g_builtin;
+bool g_builtin_loaded = false;
 std::vector<VoiceDesc> g_catalogue;
 bool g_catalogue_loaded = false;
+unsigned g_catalogue_generation = 0;
 
 [[nodiscard]] std::wstring trim(const std::wstring& s)
 {
@@ -124,6 +128,12 @@ void finish_section(VoiceDesc& v)
 
 std::wstring VoiceDesc::display_name() const
 {
+    if (!display_override.empty()) {
+        return display_override;
+    }
+    if (is_custom) {
+        return custom_name;
+    }
     return L"Infovox 330 " + speaker + L" - " + language_name;
 }
 
@@ -269,17 +279,138 @@ std::vector<VoiceDesc> parse_voice_descriptions(const std::wstring& file_path)
     return voices;
 }
 
-const std::vector<VoiceDesc>& voice_catalogue()
+namespace {
+
+// Called with the catalogue lock held.
+const std::vector<VoiceDesc>& builtin_locked()
 {
-    std::lock_guard<std::mutex> lock(g_catalogue_mutex);
-    if (!g_catalogue_loaded) {
-        g_catalogue_loaded = true;
+    if (!g_builtin_loaded) {
+        g_builtin_loaded = true;
         const std::wstring dir = voices_dir();
         if (!dir.empty()) {
-            g_catalogue = parse_voice_descriptions(dir + L"\\VoiceDescriptions.txt");
+            g_builtin = parse_voice_descriptions(dir + L"\\VoiceDescriptions.txt");
         } else {
             IVX_LOG_E("no voices directory; voice catalogue is empty");
         }
+    }
+    return g_builtin;
+}
+
+[[nodiscard]] const VoiceDesc* find_builtin(const std::vector<VoiceDesc>& all,
+                                            const std::wstring& speaker)
+{
+    for (const auto& v : all) {
+        if (_wcsicmp(v.speaker.c_str(), speaker.c_str()) == 0) {
+            return &v;
+        }
+    }
+    return nullptr;
+}
+
+[[nodiscard]] WORD lcid_from_hex(const std::wstring& s)
+{
+    if (s.empty()) {
+        return 0;
+    }
+    wchar_t* end = nullptr;
+    const unsigned long v = wcstoul(s.c_str(), &end, 16);
+    return (end == s.c_str() || v > 0xFFFF) ? 0 : static_cast<WORD>(v);
+}
+
+// Built-ins (unless hidden) followed by the user's own voices. Called with the lock held.
+void rebuild_catalogue_locked()
+{
+    const std::vector<VoiceDesc>& builtin = builtin_locked();
+    const Config& cfg = config();
+
+    std::vector<VoiceDesc> merged;
+    if (!cfg.engine.hide_builtin) {
+        merged = builtin;
+    }
+
+    for (const auto& custom : cfg.custom) {
+        if (custom.name.empty()) {
+            continue;
+        }
+        const VoiceDesc* base = find_builtin(builtin, custom.base_speaker);
+        if (!base) {
+            IVX_LOG_W("custom voice '%s' is built on '%s', which is not installed; ignoring",
+                      log_narrow(custom.name.c_str()).c_str(),
+                      log_narrow(custom.base_speaker.c_str()).c_str());
+            continue;
+        }
+
+        // A user-defined voice must not take the name of a voice that is already on offer,
+        // or SAPI would have two tokens with one id and pick between them arbitrarily.
+        bool clash = false;
+        for (const auto& existing : merged) {
+            if (_wcsicmp(existing.token_name().c_str(), custom.name.c_str()) == 0) {
+                clash = true;
+                break;
+            }
+        }
+        if (clash) {
+            IVX_LOG_W("custom voice '%s' has the same name as a voice already listed; "
+                      "ignoring", log_narrow(custom.name.c_str()).c_str());
+            continue;
+        }
+
+        VoiceDesc v = *base;
+        v.is_custom = true;
+        v.custom_name = custom.name;
+        v.display_override =
+            custom.display_name.empty() ? custom.name : custom.display_name;
+        v.base_speaker = base->speaker;
+
+        // The voice may report itself differently from the one it speaks through: an
+        // application that picks a voice by language or by gender should see what the user
+        // asked for, not what the underlying engine voice happens to be.
+        if (const WORD lcid = lcid_from_hex(custom.settings.language)) {
+            v.language_id = lcid;
+        }
+        if (!custom.settings.gender.empty()) {
+            v.gender = (_wcsicmp(custom.settings.gender.c_str(), L"Female") == 0) ? 1 : 2;
+        }
+        if (!custom.settings.age.empty()) {
+            if (_wcsicmp(custom.settings.age.c_str(), L"Child") == 0) {
+                v.age = 10;
+            } else if (_wcsicmp(custom.settings.age.c_str(), L"Senior") == 0) {
+                v.age = 70;
+            } else {
+                v.age = 30;
+            }
+        }
+        merged.push_back(std::move(v));
+    }
+
+    if (merged.empty() && cfg.engine.hide_builtin) {
+        // Hiding every built-in voice and defining none would leave Windows with no
+        // Infovox voice at all, which looks exactly like a broken installation.
+        IVX_LOG_W("the built-in voices are hidden and no usable custom voice is defined; "
+                  "offering the built-in voices anyway");
+        merged = builtin;
+    }
+
+    g_catalogue = std::move(merged);
+    IVX_LOG_I("voice catalogue rebuilt: %zu voice(s)", g_catalogue.size());
+}
+
+}  // namespace
+
+const std::vector<VoiceDesc>& builtin_catalogue()
+{
+    std::lock_guard<std::mutex> lock(g_catalogue_mutex);
+    return builtin_locked();
+}
+
+const std::vector<VoiceDesc>& voice_catalogue()
+{
+    std::lock_guard<std::mutex> lock(g_catalogue_mutex);
+    const unsigned generation = config_generation();
+    if (!g_catalogue_loaded || generation != g_catalogue_generation) {
+        g_catalogue_generation = generation;
+        g_catalogue_loaded = true;
+        rebuild_catalogue_locked();
     }
     return g_catalogue;
 }

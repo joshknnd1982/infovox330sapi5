@@ -18,7 +18,7 @@
 #>
 param(
     [string]$Root = (Split-Path -Parent $PSScriptRoot),
-    [string]$Version = '1.0.0',
+    [string]$Version = '1.0.1',
     [string]$Iscc = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
     [switch]$SkipInstaller,
     [switch]$Clean

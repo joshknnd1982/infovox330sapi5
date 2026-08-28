@@ -14,12 +14,12 @@ namespace {
 
 // SAPI's rate runs -10..+10 on a logarithmic scale that works out to roughly a third of
 // normal speed at one end and three times at the other. The engine's own speed range
-// (45..499 words per minute around a default of 150) covers exactly that, so the default is
-// simply scaled.
-constexpr double kRateSpanFactor = 3.0;
-
-// SAPI's pitch adjustment has the same shape over a smaller span: an octave either way.
-constexpr double kPitchSpanFactor = 2.0;
+// (45..499 words per minute around a default of 150) covers exactly that, so the voice's
+// rate is simply scaled. Both spans are per-voice settings now - a user who wants the whole
+// slider to stay inside a narrow band, or to reach further, sets them in the configuration
+// utility - and these are the defaults an unconfigured voice keeps.
+constexpr double kDefaultRateSpanFactor = 3.0;
+constexpr double kDefaultPitchSpanFactor = 2.0;
 
 // Audio is handed to SAPI in pieces this size so a stop request is noticed promptly rather
 // than after a whole sentence has already been passed over.
@@ -237,10 +237,34 @@ void ISpTTSEngineImpl::append_escaped(std::wstring& out, const wchar_t* text, UL
     }
 }
 
-void ISpTTSEngineImpl::append_words(std::wstring& out, const SPVTEXTFRAG* frag)
+const std::wstring* ISpTTSEngineImpl::substitution_for(const wchar_t* word,
+                                                      ULONG length) const
+{
+    if (settings_.substitutions.empty() || length == 0) {
+        return nullptr;
+    }
+    for (const auto& sub : settings_.substitutions) {
+        if (sub.from.size() == length &&
+            _wcsnicmp(sub.from.c_str(), word, length) == 0) {
+            return &sub.to;
+        }
+    }
+    return nullptr;
+}
+
+// Marks and substitutions both work on whitespace-delimited runs, so one walk does both.
+// with_marks is false when the application has not asked for word events, and then this is
+// only here to give substitutions somewhere to happen.
+void ISpTTSEngineImpl::append_fragment(std::wstring& out, const SPVTEXTFRAG* frag,
+                                       bool with_marks)
 {
     const wchar_t* text = frag->pTextStart;
     const ULONG length = frag->ulTextLen;
+
+    if (!with_marks && settings_.substitutions.empty()) {
+        append_escaped(out, text, length);
+        return;
+    }
 
     ULONG i = 0;
     while (i < length) {
@@ -273,7 +297,7 @@ void ISpTTSEngineImpl::append_words(std::wstring& out, const SPVTEXTFRAG* frag)
             --word_end;
         }
 
-        if (word_start < word_end) {
+        if (with_marks && word_start < word_end) {
             MarkInfo mark;
             mark.kind = MarkInfo::Kind::Word;
             mark.text_offset = frag->ulTextSrcOffset + word_start;
@@ -283,7 +307,39 @@ void ISpTTSEngineImpl::append_words(std::wstring& out, const SPVTEXTFRAG* frag)
             _snwprintf_s(tag, _TRUNCATE, L"\\mrk=%lu\\", next_mark_id(std::move(mark)));
             out.append(tag);
         }
-        append_escaped(out, text + start, end - start);
+
+        // A substitution replaces the word inside the run and leaves whatever punctuation
+        // surrounds it alone, so "Larry's," keeps its apostrophe and its comma. The event
+        // offsets above still describe the original text, which is what an application
+        // highlighting the source needs.
+        const std::wstring* replacement =
+            (word_start < word_end)
+                ? substitution_for(text + word_start, word_end - word_start)
+                : nullptr;
+        if (replacement) {
+            append_escaped(out, text + start, word_start - start);
+            append_escaped(out, replacement->c_str(),
+                           static_cast<ULONG>(replacement->size()));
+            append_escaped(out, text + word_end, end - word_end);
+        } else {
+            append_escaped(out, text + start, end - start);
+        }
+    }
+}
+
+void ISpTTSEngineImpl::refresh_settings()
+{
+    const unsigned generation = config_generation();
+    if (generation == settings_generation_ && settings_generation_ != 0) {
+        return;
+    }
+    settings_generation_ = generation;
+    settings_ = settings_for_voice(voice_.token_name());
+    if (settings_.rate_span <= 0.0) {
+        settings_.rate_span = kDefaultRateSpanFactor;
+    }
+    if (settings_.pitch_span <= 0.0) {
+        settings_.pitch_span = kDefaultPitchSpanFactor;
     }
 }
 
@@ -329,10 +385,19 @@ STDMETHODIMP ISpTTSEngineImpl::SetObjectToken(ISpObjectToken* pToken)
         voice_ = *voice;
         have_voice_ = true;
         token_ = pToken;
-        IVX_LOG_I("voice set to '%s' (%s), language %s",
-                  log_narrow(voice_.speaker.c_str()).c_str(),
-                  log_narrow(voice_.language_name.c_str()).c_str(),
-                  log_narrow(voice_.sapi_language_attribute().c_str()).c_str());
+        settings_generation_ = 0;
+        refresh_settings();
+        if (voice_.is_custom) {
+            IVX_LOG_I("voice set to the user-defined voice '%s', speaking through '%s', "
+                      "language %s", log_narrow(voice_.custom_name.c_str()).c_str(),
+                      log_narrow(voice_.base_speaker.c_str()).c_str(),
+                      log_narrow(voice_.sapi_language_attribute().c_str()).c_str());
+        } else {
+            IVX_LOG_I("voice set to '%s' (%s), language %s",
+                      log_narrow(voice_.speaker.c_str()).c_str(),
+                      log_narrow(voice_.language_name.c_str()).c_str(),
+                      log_narrow(voice_.sapi_language_attribute().c_str()).c_str());
+        }
         return S_OK;
     }
     catch (const std::bad_alloc&) {
@@ -414,10 +479,18 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
                       kExpectedBitsPerSample, kExpectedChannels);
         }
 
+        refresh_settings();
+        const EngineSettings& engine_settings = config().engine;
+
         ULONGLONG event_interest = 0;
         pOutputSite->GetEventInterest(&event_interest);
-        want_word_events_ = (event_interest & SPFEI(SPEI_WORD_BOUNDARY)) != 0;
-        const bool want_sentence_events = (event_interest & SPFEI(SPEI_SENTENCE_BOUNDARY)) != 0;
+        // Each mark costs a tag in the text the engine parses. A user who does not need a
+        // moving highlight can turn them off and have the engine see clean text.
+        want_word_events_ = engine_settings.word_events &&
+                            (event_interest & SPFEI(SPEI_WORD_BOUNDARY)) != 0;
+        const bool want_sentence_events =
+            engine_settings.sentence_events &&
+            (event_interest & SPFEI(SPEI_SENTENCE_BOUNDARY)) != 0;
 
         long site_rate = 0;
         pOutputSite->GetRate(&site_rate);
@@ -553,11 +626,7 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
                                      next_mark_id(std::move(mark)));
                         current.text.append(tag);
                     }
-                    if (want_word_events_) {
-                        append_words(current.text, frag);
-                    } else {
-                        append_escaped(current.text, frag->pTextStart, frag->ulTextLen);
-                    }
+                    append_fragment(current.text, frag, want_word_events_);
                     break;
                 }
             }
@@ -598,25 +667,56 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
 
             SpeakParams params;
             params.mode = run.mode;
+
+            // The voice's own rate and pitch are the neutral point that SAPI's -10..+10
+            // moves around, so a voice configured to speak at 220 words per minute still
+            // has the whole slider either side of 220 rather than either side of 150.
+            const DWORD base_speed = ranges.speed.clamped(settings_.rate);
+            const DWORD base_pitch = ranges.pitch.clamped(settings_.pitch);
+
             params.text = run.text;
             params.speed = ranges.speed.supported
-                               ? static_cast<int>(ranges.speed.scaled(
-                                     std::pow(kRateSpanFactor, run.rate / 10.0)))
+                               ? static_cast<int>(ranges.speed.scaled_from(
+                                     base_speed, std::pow(settings_.rate_span,
+                                                          run.rate / 10.0)))
                                : -1;
             params.pitch = ranges.pitch.supported
-                               ? static_cast<int>(ranges.pitch.scaled(
-                                     std::pow(kPitchSpanFactor, run.pitch_adj / 10.0)))
+                               ? static_cast<int>(ranges.pitch.scaled_from(
+                                     base_pitch, std::pow(settings_.pitch_span,
+                                                          run.pitch_adj / 10.0)))
                                : -1;
-            // The engine's own volume control does nothing, so it is pinned at maximum and
-            // the gain is applied to the samples in SiteSink instead.
-            params.volume =
-                ranges.volume.supported ? static_cast<int>(ranges.volume.max_value) : -1;
+            // The engine's own volume control was measured to do nothing - it accepts a
+            // value and produces byte-identical audio - so it is pinned at maximum and the
+            // gain is applied to the samples in SiteSink instead. Setting it anyway is
+            // offered in the configuration utility for anyone who wants to see for
+            // themselves.
+            if (ranges.volume.supported) {
+                params.volume = engine_settings.set_engine_volume
+                                    ? static_cast<int>(ranges.volume.from_percent(
+                                          run.volume_pct))
+                                    : static_cast<int>(ranges.volume.max_value);
+            } else {
+                params.volume = -1;
+            }
+            params.realtime = engine_settings.realtime;
 
-            IVX_LOG_D("run: rate=%d -> speed=%d, pitch=%d -> %d, volume=%d%%, %zu chars",
-                      run.rate, params.speed, run.pitch_adj, params.pitch, run.volume_pct,
-                      run.text.size());
+            // Whatever the user put in the voice's tag prefix, in front of every utterance.
+            // The space matters: tagged text escapes a literal backslash as "\\", so a
+            // prefix ending in one butted straight against a tag would swallow that tag.
+            if (!settings_.prefix.empty()) {
+                params.text = settings_.prefix + L" " + params.text;
+            }
 
-            SiteSink sink(pOutputSite, backend_.get(), marks_, stream_offset, run.volume_pct,
+            const int gain = engine_settings.software_volume
+                                 ? run.volume_pct * settings_.volume / 100
+                                 : 100;
+
+            IVX_LOG_D("run: rate=%d -> speed=%d (base %lu), pitch=%d -> %d (base %lu), "
+                      "gain=%d%%, %zu chars",
+                      run.rate, params.speed, base_speed, run.pitch_adj, params.pitch,
+                      base_pitch, gain, run.text.size());
+
+            SiteSink sink(pOutputSite, backend_.get(), marks_, stream_offset, gain,
                           actual.wBitsPerSample ? actual.wBitsPerSample : kExpectedBitsPerSample);
             const HRESULT run_hr = backend_->speak(params, sink);
             stream_offset += sink.bytes_written();

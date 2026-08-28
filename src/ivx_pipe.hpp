@@ -24,7 +24,7 @@ namespace pipe {
 inline constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\Infovox330TTS";
 inline constexpr wchar_t kServerMutexName[] = L"Local\\Infovox330ServerSingleton";
 inline constexpr wchar_t kServerReadyEventName[] = L"Local\\Infovox330ServerReady";
-inline constexpr uint32_t kProtocolVersion = 1;
+inline constexpr uint32_t kProtocolVersion = 2;
 
 // Largest single audio frame; the helper splits anything bigger.
 inline constexpr uint32_t kMaxFramePayload = 256 * 1024;
@@ -94,6 +94,7 @@ struct SpeakWire {
     int32_t speed;
     int32_t pitch;
     int32_t volume;
+    int32_t realtime;         // SAPI 4's fourth attribute; -1 leaves it alone
     uint32_t text_chars;      // UTF-16 units following the struct, no terminator
     wchar_t abort_event[96];  // name of a manual-reset event; empty means no stop channel
 };

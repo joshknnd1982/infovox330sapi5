@@ -19,6 +19,7 @@
 #include <comip.h>
 
 #include "ivx_com.hpp"
+#include "ivx_config.hpp"
 #include "ivx_synth.hpp"
 #include "ivx_token.hpp"
 #include "ivx_voices.hpp"
@@ -85,11 +86,26 @@ private:
     HRESULT ranges_for(const GUID& mode, VoiceRanges& out);
     [[nodiscard]] DWORD next_mark_id(MarkInfo info);
     void append_escaped(std::wstring& out, const wchar_t* text, ULONG length);
-    void append_words(std::wstring& out, const SPVTEXTFRAG* frag);
+
+    // Walks a fragment run by whitespace-delimited run, optionally writing a word mark in
+    // front of each and substituting any word the voice has a replacement for.
+    void append_fragment(std::wstring& out, const SPVTEXTFRAG* frag, bool with_marks);
+
+    // The replacement for one word, or nullptr when the voice has none.
+    [[nodiscard]] const std::wstring* substitution_for(const wchar_t* word, ULONG length) const;
+
+    // Re-reads the voice's settings if the configuration file has changed since they were
+    // last taken. A speaking application stays loaded for days, so a change made in the
+    // configuration utility has to reach it without a restart.
+    void refresh_settings();
 
     ISpObjectTokenPtr token_;
     VoiceDesc voice_;
     bool have_voice_ = false;
+
+    // The voice's saved settings, and the configuration generation they came from.
+    VoiceSettings settings_;
+    unsigned settings_generation_ = 0;
 
     // Ranges are per voice, and a <lang> tag can pull in a second voice mid-utterance, so
     // they are cached by mode rather than held singly.

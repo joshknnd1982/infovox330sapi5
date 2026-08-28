@@ -27,6 +27,15 @@ struct AttrRange {
     // SAPI rate or pitch adjustment becomes an engine value: both are logarithmic, and the
     // engine's default is the neutral point.
     [[nodiscard]] DWORD scaled(double factor) const;
+
+    // The same, from a base the caller chose. A voice configured with its own rate makes
+    // that rate the neutral point instead of the engine's, so SAPI's zero means what the
+    // user set rather than what the engine shipped with.
+    [[nodiscard]] DWORD scaled_from(DWORD base, double factor) const;
+
+    // Brings a configured value inside the engine's limits. A negative value, which is how
+    // "not configured" is stored, gives the engine's own default.
+    [[nodiscard]] DWORD clamped(int value) const;
 };
 
 struct VoiceRanges {
@@ -60,6 +69,10 @@ struct SpeakParams {
     int speed = -1;     // engine-native value, -1 leaves the current setting
     int pitch = -1;     // engine-native value, -1 leaves the current setting
     int volume = -1;    // engine-native value, -1 leaves the current setting
+    // SAPI 4's fourth attribute. The engine reports 0x7FFFFFFF for it and no SAPI 5 concept
+    // maps onto it, so nothing sets it unless the user asks for it explicitly through the
+    // configuration utility. -1 leaves it alone.
+    int realtime = -1;
 };
 
 // The wave format the engine produces. Infovox 330 is fixed at 16 kHz / 16-bit / mono; this

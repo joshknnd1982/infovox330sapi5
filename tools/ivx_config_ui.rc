@@ -1,0 +1,196 @@
+// Dialog templates for the Infovox 330 configuration utility.
+//
+// Everything here is a standard Win32 control in a standard dialog, because that is what
+// screen readers read best: nothing is owner-drawn, nothing is custom, and no information
+// is carried by colour or position alone.
+//
+// The rule every page follows is that each input is preceded in the template - which is to
+// say in the tab order - by a static label describing it. That ordering is what oleacc uses
+// to name a control, so it is the difference between "edit" and "Speaking rate in words per
+// minute, edit". tools\check_config_a11y.ps1 checks that every focusable control ends up
+// with a name, the same way tools\check_installer_a11y.ps1 does for the installer.
+//
+// Blocks of explanatory text are read-only multi-line edit controls rather than static
+// text, because an edit takes focus and can be read a line at a time with the keyboard.
+
+#include <windows.h>
+#include <commctrl.h>
+#include "ivx_config_ui.h"
+
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+
+// =======================================================================================
+// The frame: a tab control and the three buttons that decide what happens to the file.
+// =======================================================================================
+IDD_MAIN DIALOGEX 0, 0, 404, 314
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU |
+      WS_MINIMIZEBOX
+CAPTION "Infovox 330 Configuration"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    CONTROL         "", IDC_TABS, "SysTabControl32", WS_TABSTOP | WS_CLIPSIBLINGS,
+                    7, 7, 390, 258
+    LTEXT           "Last &message:", IDC_STATUS_LABEL, 7, 270, 50, 8
+    EDITTEXT        IDC_STATUS, 60, 268, 337, 12, ES_AUTOHSCROLL | ES_READONLY
+    DEFPUSHBUTTON   "&Save and close", IDOK, 205, 292, 60, 15
+    PUSHBUTTON      "&Apply", IDC_APPLY, 269, 292, 60, 15
+    PUSHBUTTON      "Cancel", IDCANCEL, 333, 292, 60, 15
+END
+
+// =======================================================================================
+// Page 1: which voice, and how it sounds.
+// =======================================================================================
+IDD_PAGE_VOICES DIALOGEX 0, 0, 380, 238
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD
+EXSTYLE WS_EX_CONTROLPARENT
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "&Voice to configure:", IDC_STATIC, 6, 9, 66, 8
+    COMBOBOX        IDC_VOICE_LIST, 76, 7, 174, 200,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "&New voice...", IDC_VOICE_NEW, 256, 6, 56, 14
+    PUSHBUTTON      "&Delete voice", IDC_VOICE_DELETE, 316, 6, 58, 14
+
+    LTEXT           "Name shown to applications:", IDC_DISPLAY_LABEL, 6, 29, 96, 8
+    EDITTEXT        IDC_DISPLAY_NAME, 106, 27, 144, 13, ES_AUTOHSCROLL
+    PUSHBUTTON      "Re&name voice...", IDC_VOICE_RENAME, 256, 26, 118, 14
+
+    LTEXT           "Spea&ks through:", IDC_BASE_LABEL, 6, 48, 96, 8
+    COMBOBOX        IDC_BASE_VOICE, 106, 46, 144, 200,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+
+    GROUPBOX        "How this voice sounds", IDC_STATIC, 6, 64, 368, 68
+
+    LTEXT           "Speaking &rate:", IDC_RATE_LABEL, 12, 79, 130, 8
+    EDITTEXT        IDC_RATE, 146, 77, 38, 13, ES_NUMBER | ES_AUTOHSCROLL
+    CONTROL         "", IDC_RATE_SPIN, "msctls_updown32", UDS_SETBUDDYINT | UDS_ALIGNRIGHT |
+                    UDS_ARROWKEYS | UDS_NOTHOUSANDS, 184, 77, 11, 13
+    CONTROL         "&Use the rate the engine ships with", IDC_RATE_DEFAULT, "Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP, 202, 78, 166, 10
+
+    LTEXT           "&Pitch:", IDC_PITCH_LABEL, 12, 97, 130, 8
+    EDITTEXT        IDC_PITCH, 146, 95, 38, 13, ES_NUMBER | ES_AUTOHSCROLL
+    CONTROL         "", IDC_PITCH_SPIN, "msctls_updown32", UDS_SETBUDDYINT | UDS_ALIGNRIGHT |
+                    UDS_ARROWKEYS | UDS_NOTHOUSANDS, 184, 95, 11, 13
+    CONTROL         "Use the pitch the en&gine ships with", IDC_PITCH_DEFAULT, "Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP, 202, 96, 166, 10
+
+    LTEXT           "V&olume, 0 to 200 percent:", IDC_STATIC, 12, 115, 130, 8
+    EDITTEXT        IDC_VOLUME, 146, 113, 38, 13, ES_NUMBER | ES_AUTOHSCROLL
+    CONTROL         "", IDC_VOLUME_SPIN, "msctls_updown32", UDS_SETBUDDYINT | UDS_ALIGNRIGHT |
+                    UDS_ARROWKEYS | UDS_NOTHOUSANDS, 184, 113, 11, 13
+    LTEXT           "Applied to the audio, because the engine ignores its own volume.",
+                    IDC_STATIC, 202, 115, 172, 8
+
+    LTEXT           "What the engine reports for &this voice:", IDC_STATIC, 6, 139, 130, 8
+    EDITTEXT        IDC_CAPABILITIES, 6, 150, 368, 26, ES_MULTILINE | ES_READONLY |
+                    ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+
+    LTEXT           "&Text to speak when previewing:", IDC_STATIC, 6, 185, 110, 8
+    EDITTEXT        IDC_PREVIEW_TEXT, 120, 183, 254, 13, ES_AUTOHSCROLL
+
+    PUSHBUTTON      "Speak the pre&view", IDC_PREVIEW_SPEAK, 6, 203, 90, 15
+    PUSHBUTTON      "St&op speaking", IDC_PREVIEW_STOP, 100, 203, 90, 15
+END
+
+// =======================================================================================
+// Page 2: how the same voice handles text, and how it is described to applications.
+// =======================================================================================
+IDD_PAGE_TEXT DIALOGEX 0, 0, 380, 238
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD
+EXSTYLE WS_EX_CONTROLPARENT
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "These settings belong to the &voice:", IDC_STATIC, 6, 9, 116, 8
+    EDITTEXT        IDC_TEXT_FOR, 126, 7, 248, 13, ES_AUTOHSCROLL | ES_READONLY
+
+    GROUPBOX        "Pronunciation", IDC_STATIC, 6, 26, 368, 92
+    LTEXT           "&Word substitutions, one per line, written as word=replacement:",
+                    IDC_STATIC, 12, 38, 240, 8
+    EDITTEXT        IDC_SUBSTITUTIONS, 12, 49, 356, 46, ES_MULTILINE | ES_WANTRETURN |
+                    ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Whole words only, ignoring case. The engine has no pronunciation tag of its own, so this is where a mispronounced word is fixed.", IDC_STATIC, 12, 99, 356, 16
+
+    GROUPBOX        "Reach of the rate and pitch controls in applications", IDC_STATIC,
+                    6, 122, 368, 46
+    LTEXT           "&Rate multiplier at the top of an application's slider:", IDC_STATIC,
+                    12, 136, 186, 8
+    EDITTEXT        IDC_RATE_SPAN, 202, 134, 40, 13, ES_AUTOHSCROLL
+    LTEXT           "&Pitch multiplier at the top of an application's slider:", IDC_STATIC,
+                    12, 152, 186, 8
+    EDITTEXT        IDC_PITCH_SPAN, 202, 150, 40, 13, ES_AUTOHSCROLL
+
+    GROUPBOX        "How this voice describes itself", IDC_STATIC, 6, 172, 368, 60
+    LTEXT           "&Language:", IDC_STATIC, 12, 187, 60, 8
+    COMBOBOX        IDC_LANGUAGE, 76, 185, 130, 200,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "&Gender:", IDC_STATIC, 216, 187, 40, 8
+    COMBOBOX        IDC_GENDER, 258, 185, 106, 120,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "&Age:", IDC_STATIC, 12, 206, 60, 8
+    COMBOBOX        IDC_AGE, 76, 204, 130, 120,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "&Engine tags sent before every utterance:", IDC_STATIC, 216, 206, 148, 8
+    EDITTEXT        IDC_PREFIX, 216, 216, 148, 13, ES_AUTOHSCROLL
+END
+
+// =======================================================================================
+// Page 3: settings that are not about one voice, and what the engine was measured to do.
+// =======================================================================================
+IDD_PAGE_ENGINE DIALOGEX 0, 0, 380, 238
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD
+EXSTYLE WS_EX_CONTROLPARENT
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "Events and voice list", IDC_STATIC, 6, 4, 368, 62
+    CONTROL         "Report &word boundaries, so a screen reader can follow the text",
+                    IDC_WORD_EVENTS, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 12, 17, 356, 10
+    CONTROL         "Report &sentence boundaries", IDC_SENTENCE_EVENTS, "Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP, 12, 30, 356, 10
+    CONTROL         "Apply &volume to the audio, since the engine ignores its own volume",
+                    IDC_SOFTWARE_VOLUME, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,
+                    12, 43, 356, 10
+    CONTROL         "Offer only the voices I &defined, and hide the sixteen built-in ones",
+                    IDC_HIDE_BUILTIN, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,
+                    12, 56, 356, 10
+
+    GROUPBOX        "Logging", IDC_STATIC, 6, 70, 368, 40
+    LTEXT           "Detail written to the &log:", IDC_STATIC, 12, 85, 82, 8
+    COMBOBOX        IDC_LOG_LEVEL, 98, 83, 96, 120,
+                    CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Open the log &folder", IDC_OPEN_LOGS, 202, 82, 80, 14
+    PUSHBUTTON      "Open the settings f&ile", IDC_OPEN_CONFIG, 288, 82, 82, 14
+
+    GROUPBOX        "Settings the engine accepts but was measured to ignore", IDC_STATIC,
+                    6, 114, 368, 46
+    CONTROL         "Send the volume to the engine as we&ll as applying it to the audio",
+                    IDC_SET_ENGINE_VOLUME, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,
+                    12, 127, 356, 10
+    CONTROL         "Set the SAPI 4 &real time attribute", IDC_REALTIME_ENABLE,
+                    "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 12, 142, 136, 10
+    LTEXT           "Real time val&ue:", IDC_STATIC, 154, 143, 54, 8
+    EDITTEXT        IDC_REALTIME, 212, 140, 44, 13, ES_NUMBER | ES_AUTOHSCROLL
+
+    LTEXT           "What this engine was &measured to do:", IDC_STATIC, 6, 165, 140, 8
+    EDITTEXT        IDC_ENGINE_REPORT, 6, 176, 368, 40, ES_MULTILINE | ES_READONLY |
+                    ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+
+    LTEXT           "Settings are stored &in:", IDC_STATIC, 6, 222, 74, 8
+    EDITTEXT        IDC_CONFIG_PATH, 84, 220, 290, 13, ES_AUTOHSCROLL | ES_READONLY
+END
+
+// =======================================================================================
+// Asking for a voice name. Used for both creating and renaming.
+// =======================================================================================
+IDD_NAME_PROMPT DIALOGEX 0, 0, 260, 78
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Name the voice"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "", IDC_PROMPT_LABEL, 7, 7, 246, 18
+    LTEXT           "&Name:", IDC_STATIC, 7, 31, 30, 8
+    EDITTEXT        IDC_PROMPT_EDIT, 40, 29, 213, 13, ES_AUTOHSCROLL
+    LTEXT           "The name applications will show, and the name this voice's settings are saved under.", IDC_STATIC, 7, 46, 246, 8
+    DEFPUSHBUTTON   "OK", IDOK, 145, 58, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 199, 58, 50, 14
+END

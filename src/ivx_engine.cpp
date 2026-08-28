@@ -1210,6 +1210,10 @@ HRESULT Engine::Impl::start_speak(const SpeakParams& params)
             const DWORD v = static_cast<DWORD>(params.volume) & 0xFFFF;
             attrs_->VolumeSet(v | (v << 16));
         }
+        if (params.realtime >= 0) {
+            const HRESULT rt = attrs_->RealTimeSet(static_cast<DWORD>(params.realtime));
+            IVX_LOG_D("RealTimeSet(%d) -> %s", params.realtime, hresult_string(rt).c_str());
+        }
     }
 
     utterance_base_ = audio_ ? audio_->written() : 0;

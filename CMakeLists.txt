@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Infovox330SAPI VERSION 1.0.0 LANGUAGES CXX)
+project(Infovox330SAPI VERSION 1.0.1 LANGUAGES CXX)
 
 # The engine is 32-bit only, so this project is built twice: once as Win32, where the SAPI 5
 # DLL loads the engine in-process, and once as x64, where it talks to the 32-bit helper over
@@ -29,6 +29,7 @@ set(IVX_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 add_library(ivx_common STATIC
     ${IVX_SRC}/ivx_log.cpp
     ${IVX_SRC}/ivx_paths.cpp
+    ${IVX_SRC}/ivx_config.cpp
     ${IVX_SRC}/ivx_voices.cpp
     ${IVX_SRC}/ivx_synth.cpp
 )
@@ -53,13 +54,30 @@ if(NOT IVX_X64)
     )
     target_link_libraries(ivx_render PRIVATE ivx_engine)
 
+    # Measures what the engine actually responds to; see tools/ivx_probe.cpp.
+    add_executable(ivx_probe
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/ivx_probe.cpp
+    )
+    target_link_libraries(ivx_probe PRIVATE ivx_engine)
+
+    # The configuration utility. 32-bit so that it can drive the engine in process and
+    # speak a preview with settings that have not been saved yet, which is the only way to
+    # choose a voice by ear.
+    add_executable(Infovox330Config WIN32
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/ivx_config_ui.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/ivx_config_ui.rc
+    )
+    target_include_directories(Infovox330Config PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+    target_link_libraries(Infovox330Config PRIVATE ivx_engine comctl32 winmm shell32)
+
     add_executable(Infovox330Server WIN32
         ${IVX_SRC}/ivx_server.cpp
         ${IVX_SRC}/ivx_pipe.cpp
     )
     target_link_libraries(Infovox330Server PRIVATE ivx_engine)
 
-    list(APPEND IVX_TARGETS ivx_engine ivx_render Infovox330Server)
+    list(APPEND IVX_TARGETS ivx_engine ivx_render ivx_probe Infovox330Config
+         Infovox330Server)
 else()
     add_library(ivx_pipe_client STATIC
         ${IVX_SRC}/ivx_pipe.cpp

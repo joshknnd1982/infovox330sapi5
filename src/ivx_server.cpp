@@ -120,6 +120,7 @@ void handle_speak(HANDLE client, const std::vector<char>& payload)
     params.speed = request.speed;
     params.pitch = request.pitch;
     params.volume = request.volume;
+    params.realtime = request.realtime;
     params.text.assign(reinterpret_cast<const wchar_t*>(payload.data() + sizeof(SpeakWire)),
                        request.text_chars);
 

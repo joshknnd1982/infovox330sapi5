@@ -6,7 +6,7 @@ touching the registry.
 
 | | |
 |---|---|
-| Voices | 16 |
+| Voices | 16, plus as many of your own as you define |
 | Languages | 12 (`da nl en-US en-GB fi fr de is it no es sv`) |
 | Audio | 16 kHz, 16-bit, mono |
 | Architectures | x86 (engine in-process) and x64 (engine in a helper process) |
@@ -70,11 +70,44 @@ reads its voice list only from `HKLM`.
 Exactly three things go into the registry: two `CLSID` entries for the COM classes, and one
 key under `Software\Microsoft\Speech\Voices\TokenEnums` pointing SAPI at our voice
 enumerator. The voices themselves are never written to the registry — SAPI asks the
-enumerator, and the enumerator reads `VoiceDescriptions.txt`. Adding or removing a voice is
-a matter of editing that file.
+enumerator, and the enumerator reads `VoiceDescriptions.txt`. Removing a voice is a matter of
+removing its section from that file; adding one is not, because the engine's own mode list
+does not come from it — see "What the engine actually responds to" below.
 
 The components page lets any language be left out. A voice whose data files are absent is
 skipped at enumeration, so a partial install stays consistent.
+
+## Making your own voices
+
+`Infovox330Config.exe` — **Infovox 330 Configuration** in the Start menu, and on the desktop
+if that box was ticked during installation — defines voices and adjusts the engine. It needs
+no administrator rights: it writes one file,
+`%LOCALAPPDATA%\Infovox330 SAPI5\config.ini`, and the engine picks changes up within a
+second, in applications that are already running.
+
+A voice you define is a SAPI 5 voice in its own right. It appears in Windows speech settings
+and in every speech application beside the sixteen built-in ones, with its own name, and it
+speaks through whichever built-in voice you pick. What you can give it:
+
+| | |
+|---|---|
+| Speaking rate | In the engine's own words per minute. This becomes the voice's neutral point, so an application's rate slider still has its full range either side of it. |
+| Pitch | The same, in the engine's own pitch units. |
+| Volume | 0 to 200 percent, applied to the audio — see the volume row further down. |
+| Reach of the rate and pitch sliders | How far ±10 in an application goes. The default ±10 is ⅓× to 3× speed and an octave of pitch; narrow it for a voice you want to keep inside a band. |
+| Pronunciations | Whole-word substitutions applied before the text reaches the engine. This is the only pronunciation control there is; see the `<pron>` row below. |
+| Language, gender and age | What the voice reports to applications, which is what they pick by. |
+| Engine tags | Sent verbatim before every utterance — the escape hatch for anything the engine understands that this project does not model. |
+
+The built-in sixteen can be adjusted the same way but not renamed or removed; to get a voice
+under a name of your own, make one. "Offer only the voices I defined" hides the built-in
+sixteen from the voice list without affecting the voices your own speak through.
+
+The utility drives the engine in process, so **Speak the preview** speaks with whatever is on
+screen, saved or not. That is the point of it: these settings are chosen by ear.
+
+Settings are written when you press Save and close or Apply, and closing with unsaved changes
+asks before discarding them.
 
 ## Checking it works
 
@@ -95,6 +128,14 @@ ivx_sapitest.exe Infovox330SAPI5.dll --all         # every voice, no registratio
 ivx_sapitest.exe Infovox330SAPI5.dll --stress 500  # interrupt, switch and prosody rounds
 ```
 
+And one that is not installed, because it is for deciding what this project should expose
+rather than for using it:
+
+```bash
+ivx_probe.exe --attrs --tags       # what the engine actually responds to
+ivx_probe.exe --modes              # the engine's mode list, beside the file it should come from
+```
+
 `ivx_sapitest` loads the DLL and asks it for its class objects, standing in for SAPI with
 its own `ISpTTSEngineSite`. It needs no administrator rights and writes nothing to the
 registry, which makes it the right tool for testing a build before installing it. On x64 it
@@ -110,6 +151,7 @@ process, flushed on every line so a crash cannot lose the lines that explain it.
 | `INFOVOX330_LOG_LEVEL` | `off`, `error`, `warn`, `info`, `debug` (default), `trace` |
 | `INFOVOX330_LOG_DIR` | write logs somewhere else |
 | `INFOVOX330_DATA_DIR` | override where the engine and voice data are found |
+| `INFOVOX330_CONFIG` | use a different settings file instead of `%LOCALAPPDATA%\Infovox330 SAPI5\config.ini` |
 
 `trace` adds a line per audio buffer and per word mark; it is large but it is the level that
 answers "why did that utterance sound wrong".
@@ -123,15 +165,15 @@ The installer writes its own log and keeps a copy as `install.log` beside the pr
 | Rate, `<rate>` | The engine's speed attribute. SAPI's −10…+10 is logarithmic and so is the engine's 45…499 wpm range around a default of 150, so ±10 lands almost exactly on ⅓× and 3×. |
 | Pitch, `<pitch>` | The engine's pitch attribute, ±1 octave over the same −10…+10. |
 | Volume, `<volume>` | **Applied in software.** The engine reports a volume attribute, accepts writes to it, and then produces byte-identical audio at every setting — measured across the whole range. Left to the engine, a volume slider would do nothing. |
-| `<silence msec>` | `\Pau=N\` |
-| `<spell>` | `\RmS=1\` … `\RmS=0\` |
+| `<silence msec>` | Emitted as `\Pau=N\`, which **this engine ignores** — see below. |
+| `<spell>` | Emitted as `\RmS=1\` … `\RmS=0\`, which **this engine ignores** — see below. |
 | Bookmarks | `\mrk=N\`, reported back with an exact audio offset |
 | `SPEI_WORD_BOUNDARY` | A `\mrk\` inserted before each **whitespace-delimited run**, never inside one. The event still reports the trimmed word, so a highlight lands on `world` rather than `world,`. See the note below on why marks must not go inside a run. |
 | `SPEI_SENTENCE_BOUNDARY` | Same mechanism, one mark per fragment |
 | `<lang langid>` | Switches to a voice that speaks that language for as long as the tag lasts, preferring one of the same gender |
 | Abort / stop | Polled between 4 KB writes, and on x64 signalled to the helper through a named event rather than the pipe, so a stop is immediate even with audio queued |
 | `<emph>` | **Not supported by this engine.** `\Emp\` produces byte-identical audio, so nothing is emitted rather than pretending. |
-| `<pron>` phonemes | **No mapping exists** between SAPI phoneme ids and this engine's phoneme set. The text is spoken as written. |
+| `<pron>` phonemes | **No mapping exists** between SAPI phoneme ids and this engine's phoneme set, and the engine ignores `\Prn\`. The text is spoken as written; the configuration utility's word substitutions are the way to fix a mispronunciation. |
 | Skip | The engine has no skip; `CompleteSkip(0)` is reported and the utterance ends. |
 | Unrecognised XML tags | Passed to the engine verbatim when the tag body is engine tagged text, so an application can reach an Infovox control SAPI has no concept of. Anything else is ignored. |
 | Viseme / phoneme events | Declined through `GetEventInterest`. |
@@ -140,10 +182,38 @@ SAPI 4 sets rate, pitch and volume once per utterance, so consecutive fragments 
 about prosody are merged into one engine call and a change starts a new one. That is as
 fine-grained as the engine can be driven.
 
-The engine has one further attribute, SAPI 4's `RealTime`. It reads back `0x7FFFFFFF` and
-SAPI 5 has no concept that maps onto it, so it is not exposed; the value is logged at
-startup so it is on the record. Anything else the engine understands is reachable through
-the unrecognised-tag route above.
+The engine has one further attribute, SAPI 4's `RealTime`. It reads back `0x7FFFFFFF`, SAPI 5
+has no concept that maps onto it, and setting it changes nothing that can be measured. It is
+offered in the configuration utility, on the page that says so, rather than hidden.
+
+### What the engine actually responds to
+
+The rows above marked "ignores" are measurements, not assumptions. `tools/ivx_probe.cpp`
+speaks a fixed sentence, speaks it again with one thing changed, and compares the audio;
+the sixteen voices are byte-identical run to run within a process once tag state is reset,
+so a tag that changes nothing is unambiguous.
+
+| | |
+|---|---|
+| `\Spd\`, `SpeedSet` | Works. 45–499 words per minute around 150, for the American English voice. |
+| `\Pit\`, `PitchSet` | Works. 30–250 around 101. |
+| `\Rst\` | Works, and resets the attributes as well as the tags — which is why nothing here sends it automatically. |
+| `\mrk\` | Works, and is acoustically free, which is what word and sentence events are built on. |
+| `\Vol\`, `VolumeSet` | Accepted, ignored. Volume is applied to the samples instead. |
+| `RealTimeSet` | Accepted, ignored. |
+| `\Pau\`, `\RmS\`, `\RmW\`, `\Emp\`, `\Chr\`, `\Ctx\`, `\Prt\`, `\Vce\`, `\Com\`, `\Eng\`, `\Prn\` | Parsed out of the text and ignored. They are not spoken aloud, so emitting them is harmless, but they do nothing. |
+
+Two consequences worth stating plainly, because the table above used to claim otherwise:
+**`<silence>` produces no silence and `<spell>` does not spell out.** Both could be done in
+software the way volume is — writing the silence into the stream, and spacing the characters
+out before the engine sees them — and neither is done yet.
+
+The engine's sixteen voices are equally fixed. A section added to `VoiceDescriptions.txt` by
+hand is not enumerated, and changing an existing section's `Pitch`, `Dynamic`, `Aspiration`,
+`FormantNo`, `SpeakerName` or even `DiphoneFile` changes nothing about what the engine
+produces — the shim parses those keys, but the mode list and the voice data behind it do not
+come from that file. That is why a voice you define is a SAPI 5 voice in front of one of the
+sixteen rather than a seventeenth engine mode.
 
 ### Word marks must never land inside a token
 
@@ -204,6 +274,7 @@ src/
   ivx_synth.hpp      the types both architectures share, and the backend interface
   ivx_pipe*.cpp      the wire protocol, the 64-bit client and the 32-bit helper
   ivx_voices.*       VoiceDescriptions.txt, and the voice catalogue it produces
+  ivx_config.*       the settings file: engine settings and user-defined voices
   ivx_tts_engine.*   ISpTTSEngine and ISpObjectWithToken
   ivx_enum_tokens.*  the voice enumerator SAPI reaches through TokenEnums
   ivx_token.*        one SAPI 5 voice token per catalogue entry
@@ -214,9 +285,12 @@ tools/
   build_all.ps1            build both architectures, stage, compile the installer
   stage.ps1                assemble output\
   ivx_render.cpp           a WAV per voice, straight from the engine
+  ivx_probe.cpp            measure what the engine responds to
   ivx_sapitest.cpp         drive the DLL without registering it
   ivx_speak.cpp            speak through the registered SAPI 5 stack
+  ivx_config_ui.cpp/.rc    the configuration utility
   check_installer_a11y.ps1 read every wizard control through MSAA
+  check_config_a11y.ps1    the same, for the configuration utility
 installer/
   infovox330_sapi5.iss     the Inno Setup script
   before_install.txt       what the installer shows before installing
@@ -234,7 +308,24 @@ reports what NVDA and JAWS actually see.
 
 That check found one real defect — the components tree, on the page where languages are
 chosen, had no accessible name — which is why `InitializeWizard` sets one. The current
-result is every focusable control on every page named.
+result is every focusable control on all five pages named.
+
+`tools\check_config_a11y.ps1` does the same for the configuration utility, walking all three
+tab pages. It found two defects worth naming, because both are the kind that look fine on
+screen:
+
+* The real-time value had no accessible name. A Win32 control takes its name from the static
+  text before it in the tab order, and the thing before that one was a check box, which keeps
+  its caption for itself. It went unreported at first because the check excused disabled
+  controls; it no longer does, since a control that is unnamed while greyed out is unnamed
+  when it is switched on.
+* The tab order ran backwards through the tab control. Pages parented to the dialog have to
+  sit above the tab control in the z-order to be painted at all, and the dialog manager builds
+  the tab order from the z-order — so every control on the page came *before* the tab control
+  that selects the page. Parenting the pages to the tab control instead puts them where a
+  keyboard user expects them.
+
+The current result is 88 controls across three pages, every focusable one named.
 
 ## Provenance and licensing
 

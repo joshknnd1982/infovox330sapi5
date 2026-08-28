@@ -30,8 +30,22 @@ struct VoiceDesc {
     std::wstring language_file;
     std::wstring library_file;
 
-    // Unique, stable identifier used as the SAPI 5 token name.
-    [[nodiscard]] std::wstring token_name() const { return speaker; }
+    // A voice the user defined in the configuration utility. It carries the mode GUID and
+    // the data files of the voice it is built on and differs only in what it is called and
+    // in the settings saved against its name, because the engine's sixteen modes are fixed:
+    // a section added to VoiceDescriptions.txt by hand is not enumerated, and changing a
+    // section's own keys was measured to change nothing. See tools/ivx_probe.cpp.
+    bool is_custom = false;
+    std::wstring custom_name;       // the SAPI 5 token name when is_custom
+    std::wstring display_override;  // what applications show when is_custom
+    std::wstring base_speaker;      // the built-in voice underneath, when is_custom
+
+    // Unique, stable identifier used as the SAPI 5 token name, and the key the voice's
+    // saved settings are stored under.
+    [[nodiscard]] std::wstring token_name() const
+    {
+        return is_custom ? custom_name : speaker;
+    }
 
     // What a speech application shows the user.
     [[nodiscard]] std::wstring display_name() const;
@@ -49,7 +63,13 @@ struct VoiceDesc {
 // Parses VoiceDescriptions.txt. Returns an empty vector and logs on failure.
 [[nodiscard]] std::vector<VoiceDesc> parse_voice_descriptions(const std::wstring& file_path);
 
-// The catalogue for the resolved data root, parsed once and cached.
+// The sixteen voices the engine ships with, straight from VoiceDescriptions.txt. This is
+// what a user-defined voice picks its base from, and it is never affected by configuration.
+[[nodiscard]] const std::vector<VoiceDesc>& builtin_catalogue();
+
+// What SAPI is offered: the built-in voices unless the user has hidden them, followed by
+// the voices the user defined. Rebuilt whenever the configuration file changes, so a voice
+// added in the configuration utility appears in applications that are already running.
 [[nodiscard]] const std::vector<VoiceDesc>& voice_catalogue();
 
 // Case-insensitive lookup by token name (speaker). Returns nullptr if absent.

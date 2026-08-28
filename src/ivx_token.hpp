@@ -20,6 +20,10 @@ namespace sapi {
 inline constexpr wchar_t kAttrSpeaker[] = L"InfovoxSpeaker";
 inline constexpr wchar_t kAttrModeGuid[] = L"InfovoxModeGuid";
 
+// Only present on a user-defined voice: the built-in voice it speaks through. Nothing in
+// the engine needs it, but it makes a voice's origin visible to anyone inspecting a token.
+inline constexpr wchar_t kAttrBaseSpeaker[] = L"InfovoxBaseSpeaker";
+
 class voice_token : public ISpDataKeyImpl
 {
 public:

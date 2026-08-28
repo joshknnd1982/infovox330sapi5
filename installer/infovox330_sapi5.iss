@@ -21,13 +21,14 @@
   #define StageDir "..\output"
 #endif
 #ifndef Version
-  #define Version "1.0.0"
+  #define Version "1.0.1"
 #endif
 
 #define AppName        "Infovox 330 SAPI 5"
 #define AppPublisher   "Infovox 330 SAPI 5 project"
 #define EngineDllName  "Infovox330SAPI5.dll"
 #define ServerExeName  "Infovox330Server.exe"
+#define ConfigExeName  "Infovox330Config.exe"
 
 [Setup]
 #ifdef Probe
@@ -41,7 +42,7 @@ AppName={#AppName}
 AppVersion={#Version}
 AppVerName={#AppName} {#Version}
 AppPublisher={#AppPublisher}
-AppComments=Sixteen Infovox 330 voices in twelve languages, available to any SAPI 5 application.
+AppComments=Sixteen Infovox 330 voices in twelve languages, available to any SAPI 5 application, with a configuration utility for defining your own.
 UninstallDisplayName={#AppName}
 DefaultDirName={autopf}\Infovox330SAPI5
 DefaultGroupName={#AppName}
@@ -80,6 +81,12 @@ InfoBeforeFile={#StageDir}\..\installer\before_install.txt
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Tasks]
+; Offered, not assumed, and unchecked by default the way Windows guidance asks. The check
+; box is a standard control on the standard "Select Additional Tasks" page, so it is read
+; and toggled by a screen reader like any other.
+Name: "desktopicon"; Description: "Create a &desktop shortcut to the Infovox 330 configuration utility"; GroupDescription: "Additional shortcuts:"; Components: config
+
 [Types]
 Name: "full";   Description: "Everything - all sixteen voices in all twelve languages"
 Name: "custom"; Description: "Choose which languages to install"; Flags: iscustom
@@ -99,6 +106,7 @@ Name: "voices\it";  Description: "Italian - Roberto";               Types: full
 Name: "voices\no";  Description: "Norwegian - Trygve, Vegard";      Types: full
 Name: "voices\sp";  Description: "Spanish - Juan";                  Types: full
 Name: "voices\sw";  Description: "Swedish - AnnMarie, Ingmar";      Types: full
+Name: "config";     Description: "Configuration utility (define your own voices and adjust the engine)"; Types: full custom
 Name: "tools";      Description: "Diagnostic tools (sample renderer and test harness)"; Types: full
 
 [Files]
@@ -111,6 +119,10 @@ Source: "{#StageDir}\..\installer\before_install.txt"; DestDir: "{app}"; Compone
 Source: "{#StageDir}\{#EngineDllName}";      DestDir: "{app}";     Components: engine; Flags: ignoreversion
 Source: "{#StageDir}\{#ServerExeName}";      DestDir: "{app}";     Components: engine; Flags: ignoreversion
 Source: "{#StageDir}\infovox_host.dll";      DestDir: "{app}";     Components: engine; Flags: ignoreversion
+; The configuration utility is 32-bit and drives the engine in process, so it can speak a
+; preview with settings that have not been saved yet. It writes only to the user's own
+; %LOCALAPPDATA%, so it never needs to be run as administrator.
+Source: "{#StageDir}\{#ConfigExeName}";      DestDir: "{app}";     Components: config; Flags: ignoreversion
 Source: "{#StageDir}\ivx_speak.exe";         DestDir: "{app}";     Components: engine; Flags: ignoreversion
 Source: "{#StageDir}\..\installer\open_logs.cmd"; DestDir: "{app}"; Components: engine; Flags: ignoreversion
 Source: "{#StageDir}\x64\{#EngineDllName}";  DestDir: "{app}\x64"; Components: engine; Flags: ignoreversion; Check: Is64BitInstallMode
@@ -159,12 +171,18 @@ Source: "{#StageDir}\x64\ivx_sapitest.exe";  DestDir: "{app}\x64"; Components: t
 #endif
 
 [Icons]
+Name: "{group}\Infovox 330 Configuration"; Filename: "{app}\{#ConfigExeName}"; Comment: "Define your own Infovox 330 voices and adjust the speech engine"; Components: config
+Name: "{autodesktop}\Infovox 330 Configuration"; Filename: "{app}\{#ConfigExeName}"; Comment: "Define your own Infovox 330 voices and adjust the speech engine"; Components: config; Tasks: desktopicon
 Name: "{group}\Speak a test sentence"; Filename: "{app}\ivx_speak.exe"; Comment: "Speaks one sentence using an Infovox 330 voice"
 Name: "{group}\List installed voices"; Filename: "{app}\ivx_speak.exe"; Parameters: "--list"; Comment: "Lists every SAPI 5 voice Windows can see"
 Name: "{group}\Open the log folder";   Filename: "{app}\open_logs.cmd"; Comment: "Opens the folder the speech engine writes its logs to"
 
 [Run]
 Filename: "{app}\ivx_speak.exe"; Description: "Speak a test sentence now"; Flags: postinstall nowait skipifsilent unchecked
+; runasoriginaluser matters here. Setup is elevated, and the utility saves to
+; %LOCALAPPDATA% - without this it would write the settings into the administrator's
+; profile rather than into the profile of the person who is going to use the voices.
+Filename: "{app}\{#ConfigExeName}"; Description: "Open the configuration utility to set up a voice"; Components: config; Flags: postinstall nowait skipifsilent unchecked runasoriginaluser
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\Ivx330"
@@ -192,12 +210,17 @@ begin
   RegistrationNotes := RegistrationNotes + S;
 end;
 
-{ The helper keeps the engine loaded, so it has to go before files are replaced or removed. }
+{ The helper keeps the engine loaded, and so does the configuration utility while it is
+  open, so both have to go before files are replaced or removed. Neither holds anything the
+  user would lose: the utility writes its settings when it is closed, and the helper is
+  started again on demand by the next 64-bit client. }
 procedure StopHelper;
 var
   ResultCode: Integer;
 begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#ServerExeName} /F', '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#ConfigExeName} /F', '',
        SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
@@ -228,6 +251,7 @@ begin
     the way NVDA does. Before this line the components tree reported no name at all. }
   SetWindowTextW(WizardForm.ComponentsList.Handle, 'Components to install');
   SetWindowTextW(WizardForm.TypesCombo.Handle, 'Installation type');
+  SetWindowTextW(WizardForm.TasksList.Handle, 'Additional tasks');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -321,8 +345,11 @@ begin
   begin
     Blank := #13#10 + #13#10;
     Summary := '{#AppName} has been installed.' + Blank + RegistrationNotes + Blank +
-      'Choose a voice in your screen reader or in Windows speech settings, or tick the box ' +
-      'below to hear one now.';
+      'Choose a voice in your screen reader or in Windows speech settings, or tick a box ' +
+      'below to hear one now.' + Blank +
+      'To define your own voices - your own names, speaking rates, pitches and ' +
+      'pronunciations - open Infovox 330 Configuration from the Start menu. It does not ' +
+      'need administrator rights, and it saves to your own settings file.';
     WizardForm.FinishedLabel.AutoSize := False;
     WizardForm.FinishedLabel.Height := WizardForm.FinishedLabel.Parent.ClientHeight - 8;
     WizardForm.FinishedLabel.Caption := Summary;
