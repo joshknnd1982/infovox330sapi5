@@ -34,6 +34,10 @@ constexpr DWORD kUtteranceTimeoutMs = 600000;
 // After asking the engine to stop, wait this long for it to settle before moving on.
 constexpr DWORD kAbortSettleMs = 3000;
 
+// The engine stamps a mark with a clock of its own, which leaves out the last sentence of
+// every earlier text, so each text starts with this mark and the others are measured from it.
+constexpr DWORD kOriginMark = 0x7FFFFFFF;
+
 [[nodiscard]] std::wstring bounded_wstring(const WCHAR* s, std::size_t capacity)
 {
     if (!s) {
@@ -207,7 +211,7 @@ public:
     // text_bookmark fires in between, the mark belonged to a "\mrk=N\" tag in the text
     // rather than to a plain word boundary.
     virtual void begin_mark(unsigned __int64 total_at) = 0;
-    virtual void text_bookmark(DWORD mark_number, unsigned __int64 absolute_offset) = 0;
+    virtual void text_bookmark(DWORD mark_number, unsigned __int64 engine_time) = 0;
     virtual void end_mark() = 0;
     virtual void engine_audio_stopped() = 0;
     virtual void engine_text_done() = 0;
@@ -662,8 +666,8 @@ public:
 
     STDMETHODIMP BookMark(QWORD qTimeStamp, DWORD dwMarkNum) override
     {
-        // This is the mark number the text actually asked for. The engine's timestamps are
-        // byte positions in the stream we handed it, so qTimeStamp is the audio offset.
+        // This is the mark number the text actually asked for, and qTimeStamp is where it
+        // falls on the engine's own clock.
         IVX_LOG_D("ITTSBufNotifySink::BookMark id=%lu ts=%llu", dwMarkNum, qTimeStamp);
         target_->text_bookmark(dwMarkNum, qTimeStamp);
         return S_OK;
@@ -786,18 +790,23 @@ public:
         mark_was_bookmark_ = false;
     }
 
-    void text_bookmark(DWORD mark_number, unsigned __int64 absolute_offset) override
+    void text_bookmark(DWORD mark_number, unsigned __int64 engine_time) override
     {
         mark_was_bookmark_ = true;
         std::lock_guard<std::mutex> lock(mutex_);
         if (!speaking_.load(std::memory_order_acquire)) {
             return;
         }
+        if (mark_number == kOriginMark) {
+            origin_ = engine_time;
+            have_origin_ = true;
+            return;
+        }
         StreamItem item;
         item.kind = StreamItem::Kind::Bookmark;
         item.bookmark_id = mark_number;
-        item.offset = absolute_offset >= utterance_base_ ? absolute_offset - utterance_base_
-                                                         : mark_offset_ - utterance_base_;
+        item.offset = have_origin_ && engine_time >= origin_ ? engine_time - origin_
+                                                            : mark_offset_ - utterance_base_;
         queue_.push_back(std::move(item));
         cv_.notify_all();
     }
@@ -917,6 +926,8 @@ private:
     unsigned __int64 mark_offset_ = 0;
     bool mark_was_bookmark_ = false;
     unsigned __int64 utterance_base_ = 0;
+    unsigned __int64 origin_ = 0;
+    bool have_origin_ = false;
     std::wstring pending_text_;
 };
 
@@ -1217,7 +1228,7 @@ HRESULT Engine::Impl::start_speak(const SpeakParams& params)
     }
 
     utterance_base_ = audio_ ? audio_->written() : 0;
-    pending_text_ = params.text;
+    pending_text_ = L"\\mrk=" + std::to_wstring(kOriginMark) + L"\\" + params.text;
 
     SDATA data{};
     data.pData = const_cast<wchar_t*>(pending_text_.c_str());
@@ -1255,6 +1266,7 @@ HRESULT Engine::Impl::speak(const SpeakParams& params, SynthSink& sink)
         text_done_ = false;
         unclaimed_tick_ = 0;
         utterance_base_ = 0;
+        have_origin_ = false;
     }
     abort_requested_.store(false, std::memory_order_release);
     speaking_.store(true, std::memory_order_release);

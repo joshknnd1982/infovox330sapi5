@@ -40,10 +40,13 @@ class SiteSink : public SynthSink
 {
 public:
     SiteSink(ISpTTSEngineSite* site, SynthBackend* backend, const std::vector<MarkInfo>& marks,
-             ULONGLONG stream_base, int volume_percent, WORD bits_per_sample)
+             std::size_t first_mark, std::size_t end_mark, ULONGLONG stream_base,
+             int volume_percent, WORD bits_per_sample)
         : site_(site),
           backend_(backend),
           marks_(marks),
+          first_mark_(first_mark),
+          reported_(end_mark - first_mark, false),
           stream_base_(stream_base),
           volume_percent_(volume_percent),
           bits_per_sample_(bits_per_sample)
@@ -93,6 +96,9 @@ public:
             IVX_LOG_W("engine reported unknown mark id %lu", id);
             return;
         }
+        if (id - 1 >= first_mark_ && id - 1 < first_mark_ + reported_.size()) {
+            reported_[id - 1 - first_mark_] = true;
+        }
         const MarkInfo& mark = marks_[id - 1];
         const ULONGLONG offset = stream_base_ + audio_offset;
 
@@ -139,6 +145,17 @@ public:
 
     bool should_abort() override { return aborted_ || check_actions(); }
 
+    // The engine drops a mark that comes after the last full stop of its text, so whatever
+    // it has not reported by the end is reported there.
+    void finish()
+    {
+        for (std::size_t i = 0; i < reported_.size(); ++i) {
+            if (!reported_[i]) {
+                on_bookmark(bytes_written_, static_cast<DWORD>(first_mark_ + i + 1));
+            }
+        }
+    }
+
     [[nodiscard]] ULONGLONG bytes_written() const { return bytes_written_; }
     [[nodiscard]] bool aborted() const { return aborted_; }
     [[nodiscard]] bool skipped() const { return skipped_; }
@@ -169,6 +186,8 @@ private:
     ISpTTSEngineSite* site_;
     SynthBackend* backend_;
     const std::vector<MarkInfo>& marks_;
+    std::size_t first_mark_;
+    std::vector<bool> reported_;
     ULONGLONG stream_base_;
     ULONGLONG bytes_written_ = 0;
     int volume_percent_ = 100;
@@ -536,6 +555,7 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
             if (!have_current || !IsEqualGUID(current.mode, mode) || current.rate != rate ||
                 current.pitch_adj != pitch_adj || current.volume_pct != volume_pct) {
                 if (have_current && !current.empty()) {
+                    current.end_mark = marks_.size();
                     runs.push_back(std::move(current));
                 }
                 current = Run{};
@@ -543,6 +563,7 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
                 current.rate = rate;
                 current.pitch_adj = pitch_adj;
                 current.volume_pct = volume_pct;
+                current.first_mark = marks_.size();
                 have_current = true;
             }
 
@@ -632,6 +653,7 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
             }
         }
         if (have_current && !current.empty()) {
+            current.end_mark = marks_.size();
             runs.push_back(std::move(current));
         }
 
@@ -716,9 +738,13 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
                       run.rate, params.speed, base_speed, run.pitch_adj, params.pitch,
                       base_pitch, gain, run.text.size());
 
-            SiteSink sink(pOutputSite, backend_.get(), marks_, stream_offset, gain,
+            SiteSink sink(pOutputSite, backend_.get(), marks_, run.first_mark, run.end_mark,
+                          stream_offset, gain,
                           actual.wBitsPerSample ? actual.wBitsPerSample : kExpectedBitsPerSample);
             const HRESULT run_hr = backend_->speak(params, sink);
+            if (SUCCEEDED(run_hr) && !sink.aborted()) {
+                sink.finish();
+            }
             stream_offset += sink.bytes_written();
 
             if (FAILED(run_hr)) {

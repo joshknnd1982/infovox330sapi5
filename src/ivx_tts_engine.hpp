@@ -79,6 +79,8 @@ private:
         int rate = 0;           // combined SAPI rate, -10..10
         int pitch_adj = 0;      // SAPI middle-pitch adjustment, -10..10
         int volume_pct = 100;   // 0..100
+        std::size_t first_mark = 0;
+        std::size_t end_mark = 0;
         bool empty() const { return text.empty(); }
     };
 
