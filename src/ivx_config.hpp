@@ -58,10 +58,10 @@ struct VoiceSettings {
     int volume = 100;
 
     // What SAPI's rate and pitch sliders reach. SAPI's -10..+10 is logarithmic, so +10
-    // multiplies the voice's own rate by this factor and -10 divides by it. 3.0 and 2.0
-    // are the values the engine's range was originally matched to.
-    double rate_span = 3.0;
-    double pitch_span = 2.0;
+    // multiplies the voice's own rate or pitch by this factor and -10 divides by it. 0
+    // reaches the engine's own lowest and highest value instead, as a SAPI 4 program could.
+    double rate_span = 0.0;
+    double pitch_span = 0.0;
 
     // Engine tagged text placed in front of every utterance. The escape hatch for anything
     // the engine understands that this project does not model; \Spd\, \Pit\ and \Rst\ are

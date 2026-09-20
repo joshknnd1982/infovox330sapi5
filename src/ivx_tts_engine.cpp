@@ -13,15 +13,6 @@ namespace ivx {
 namespace sapi {
 namespace {
 
-// SAPI's rate runs -10..+10 on a logarithmic scale that works out to roughly a third of
-// normal speed at one end and three times at the other. The engine's own speed range
-// (45..499 words per minute around a default of 150) covers exactly that, so the voice's
-// rate is simply scaled. Both spans are per-voice settings now - a user who wants the whole
-// slider to stay inside a narrow band, or to reach further, sets them in the configuration
-// utility - and these are the defaults an unconfigured voice keeps.
-constexpr double kDefaultRateSpanFactor = 3.0;
-constexpr double kDefaultPitchSpanFactor = 2.0;
-
 // Audio is handed to SAPI in pieces this size so a stop request is noticed promptly rather
 // than after a whole sentence has already been passed over.
 constexpr ULONG kWriteChunkBytes = 4096;
@@ -52,14 +43,7 @@ constexpr unsigned long kLongestPauseMs = 60000;
 
 [[nodiscard]] VoiceSettings settings_of(const VoiceDesc& voice)
 {
-    VoiceSettings settings = settings_for_voice(voice.token_name());
-    if (settings.rate_span <= 0.0) {
-        settings.rate_span = kDefaultRateSpanFactor;
-    }
-    if (settings.pitch_span <= 0.0) {
-        settings.pitch_span = kDefaultPitchSpanFactor;
-    }
-    return settings;
+    return settings_for_voice(voice.token_name());
 }
 
 // A Language gets the voice the engine itself would pick: the first male one.
@@ -955,17 +939,17 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
             const DWORD base_speed = ranges.speed.clamped(run.settings.rate);
             const DWORD base_pitch = ranges.pitch.clamped(run.settings.pitch);
 
+            const auto reach = [](const AttrRange& range, DWORD base, double span, int step) {
+                if (!range.supported) {
+                    return -1;
+                }
+                return static_cast<int>(span > 0.0
+                                            ? range.scaled_from(base, std::pow(span, step / 10.0))
+                                            : range.stepped_from(base, step));
+            };
             params.text = run.text;
-            params.speed = ranges.speed.supported
-                               ? static_cast<int>(ranges.speed.scaled_from(
-                                     base_speed, std::pow(run.settings.rate_span,
-                                                          run.rate / 10.0)))
-                               : -1;
-            params.pitch = ranges.pitch.supported
-                               ? static_cast<int>(ranges.pitch.scaled_from(
-                                     base_pitch, std::pow(run.settings.pitch_span,
-                                                          run.pitch_adj / 10.0)))
-                               : -1;
+            params.speed = reach(ranges.speed, base_speed, run.settings.rate_span, run.rate);
+            params.pitch = reach(ranges.pitch, base_pitch, run.settings.pitch_span, run.pitch_adj);
             // The engine's own volume control was measured to do nothing - it accepts a
             // value and produces byte-identical audio - so it is pinned at maximum and the
             // gain is applied to the samples in SiteSink instead. Setting it anyway is

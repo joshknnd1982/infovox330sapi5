@@ -33,6 +33,10 @@ struct AttrRange {
     // user set rather than what the engine shipped with.
     [[nodiscard]] DWORD scaled_from(DWORD base, double factor) const;
 
+    // SAPI's -10..+10 over the whole of the engine's own range, the way a SAPI 4 program
+    // could reach it: -10 is the lowest value, +10 the highest, and base sits at 0.
+    [[nodiscard]] DWORD stepped_from(DWORD base, int step) const;
+
     // Brings a configured value inside the engine's limits. A negative value, which is how
     // "not configured" is stored, gives the engine's own default.
     [[nodiscard]] DWORD clamped(int value) const;

@@ -94,7 +94,7 @@ speaks through whichever built-in voice you pick. What you can give it:
 | Speaking rate | In the engine's own words per minute. This becomes the voice's neutral point, so an application's rate slider still has its full range either side of it. |
 | Pitch | The same, in the engine's own pitch units. |
 | Volume | 0 to 200 percent, applied to the audio — see the volume row further down. |
-| Reach of the rate and pitch sliders | How far ±10 in an application goes. The default ±10 is ⅓× to 3× speed and an octave of pitch; narrow it for a voice you want to keep inside a band. |
+| Reach of the rate and pitch sliders | How far ±10 in an application goes. By default ±10 reaches the engine's slowest and fastest speed, 45 and 499 words per minute, and its lowest and highest pitch, 30 and 250 hertz, as it could under SAPI 4. A multiplier keeps a voice inside that many times its own rate or pitch instead. |
 | Pronunciations | Whole-word substitutions applied before the text reaches the engine. This is the only pronunciation control there is; see the `<pron>` row below. |
 | Language, gender and age | What the voice reports to applications, which is what they pick by. |
 | Engine tags | Sent verbatim before every utterance — the escape hatch for anything the engine understands that this project does not model. |
@@ -162,8 +162,8 @@ The installer writes its own log and keeps a copy as `install.log` beside the pr
 
 | SAPI 5 | Here |
 |---|---|
-| Rate, `<rate>` | The engine's speed attribute. SAPI's −10…+10 is logarithmic and so is the engine's 45…499 wpm range around a default of 150, so ±10 lands almost exactly on ⅓× and 3×. |
-| Pitch, `<pitch>` | The engine's pitch attribute, ±1 octave over the same −10…+10. |
+| Rate, `<rate>` | The engine's speed attribute. −10 reaches the engine's slowest speed, 45 words per minute, and +10 its fastest, 499, as a SAPI 4 program could, on a logarithmic scale either side of the voice's own rate. |
+| Pitch, `<pitch>` | The engine's pitch attribute. −10 reaches the engine's lowest pitch, 30 hertz, and +10 its highest, 250, as a SAPI 4 program could, on a logarithmic scale either side of the voice's own pitch. `\Pit=` in the text goes lower still. |
 | Volume, `<volume>` | **Applied in software.** The engine reports a volume attribute, accepts writes to it, and then produces byte-identical audio at every setting — measured across the whole range. Left to the engine, a volume slider would do nothing. |
 | `<silence msec>` | Silence of that length, written into the audio where the element is, because this engine ignores `\Pau=N\` — see below. |
 | `<spell>` | Emitted as `\RmS=1\` … `\RmS=0\`, which **this engine ignores** — see below. |

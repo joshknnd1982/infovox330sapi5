@@ -104,21 +104,21 @@ BEGIN
     LTEXT           "These settings belong to the &voice:", IDC_STATIC, 6, 9, 116, 8
     EDITTEXT        IDC_TEXT_FOR, 126, 7, 248, 13, ES_AUTOHSCROLL | ES_READONLY
 
-    GROUPBOX        "Pronunciation", IDC_STATIC, 6, 26, 368, 92
+    GROUPBOX        "Pronunciation", IDC_STATIC, 6, 26, 368, 88
     LTEXT           "&Word substitutions, one per line, written as word=replacement:",
                     IDC_STATIC, 12, 38, 240, 8
-    EDITTEXT        IDC_SUBSTITUTIONS, 12, 49, 356, 46, ES_MULTILINE | ES_WANTRETURN |
+    EDITTEXT        IDC_SUBSTITUTIONS, 12, 49, 356, 42, ES_MULTILINE | ES_WANTRETURN |
                     ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "Whole words only, ignoring case. The engine has no pronunciation tag of its own, so this is where a mispronounced word is fixed.", IDC_STATIC, 12, 99, 356, 16
+    LTEXT           "Whole words only, ignoring case. The engine has no pronunciation tag of its own, so this is where a mispronounced word is fixed.", IDC_STATIC, 12, 95, 356, 16
 
     GROUPBOX        "Reach of the rate and pitch controls in applications", IDC_STATIC,
-                    6, 122, 368, 46
-    LTEXT           "&Rate multiplier at the top of an application's slider:", IDC_STATIC,
-                    12, 136, 186, 8
-    EDITTEXT        IDC_RATE_SPAN, 202, 134, 40, 13, ES_AUTOHSCROLL
-    LTEXT           "&Pitch multiplier at the top of an application's slider:", IDC_STATIC,
-                    12, 152, 186, 8
-    EDITTEXT        IDC_PITCH_SPAN, 202, 150, 40, 13, ES_AUTOHSCROLL
+                    6, 118, 368, 50
+    LTEXT           "&Rate multiplier at the top of an application's slider, or 0 for the engine's whole range:",
+                    IDC_STATIC, 12, 130, 186, 16
+    EDITTEXT        IDC_RATE_SPAN, 202, 130, 40, 13, ES_AUTOHSCROLL
+    LTEXT           "&Pitch multiplier at the top of an application's slider, or 0 for the engine's whole range:",
+                    IDC_STATIC, 12, 148, 186, 16
+    EDITTEXT        IDC_PITCH_SPAN, 202, 148, 40, 13, ES_AUTOHSCROLL
 
     GROUPBOX        "How this voice describes itself", IDC_STATIC, 6, 172, 368, 60
     LTEXT           "&Language:", IDC_STATIC, 12, 187, 60, 8

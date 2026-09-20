@@ -481,8 +481,8 @@ void store_current()
 
     const double rate_span = _wtof(get_text(g_app.page[1], IDC_RATE_SPAN).c_str());
     const double pitch_span = _wtof(get_text(g_app.page[1], IDC_PITCH_SPAN).c_str());
-    s->rate_span = rate_span > 0.0 ? rate_span : 3.0;
-    s->pitch_span = pitch_span > 0.0 ? pitch_span : 2.0;
+    s->rate_span = rate_span > 0.0 ? rate_span : 0.0;
+    s->pitch_span = pitch_span > 0.0 ? pitch_span : 0.0;
 
     const auto combo_value = [](HWND parent, int id, const std::vector<std::wstring>& values) {
         const LRESULT index = SendDlgItemMessageW(parent, id, CB_GETCURSEL, 0, 0);
