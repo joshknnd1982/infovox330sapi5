@@ -66,6 +66,16 @@ bool ours(ISpObjectToken* token)
     return match;
 }
 
+// Larry, then Roger, then Lucy, then whichever voice comes first.
+int preference(ISpObjectToken* token)
+{
+    if (!token_attribute(token, L"InfovoxBaseSpeaker").empty()) {
+        return 3;
+    }
+    const std::wstring speaker = token_attribute(token, L"InfovoxSpeaker");
+    return speaker == L"Larry" ? 0 : (speaker == L"Roger" ? 1 : (speaker == L"Lucy" ? 2 : 3));
+}
+
 }  // namespace
 
 int wmain(int argc, wchar_t** argv)
@@ -136,6 +146,7 @@ int wmain(int argc, wchar_t** argv)
     tokens->GetCount(&count);
 
     ISpObjectToken* chosen = nullptr;
+    int chosen_preference = 4;
     int infovox_count = 0;
 
     for (ULONG i = 0; i < count; ++i) {
@@ -160,9 +171,14 @@ int wmain(int argc, wchar_t** argv)
             is_ours && (voice_filter.empty() ||
                         description.find(voice_filter) != std::wstring::npos ||
                         token_attribute(token, L"InfovoxSpeaker") == voice_filter);
-        if (!chosen && matches) {
+        const int rank = voice_filter.empty() ? preference(token) : 0;
+        if (matches && rank < chosen_preference) {
+            if (chosen) {
+                chosen->Release();
+            }
             chosen = token;
             chosen->AddRef();
+            chosen_preference = rank;
         }
         token->Release();
     }
