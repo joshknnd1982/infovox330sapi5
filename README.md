@@ -165,7 +165,7 @@ The installer writes its own log and keeps a copy as `install.log` beside the pr
 | Rate, `<rate>` | The engine's speed attribute. SAPI's −10…+10 is logarithmic and so is the engine's 45…499 wpm range around a default of 150, so ±10 lands almost exactly on ⅓× and 3×. |
 | Pitch, `<pitch>` | The engine's pitch attribute, ±1 octave over the same −10…+10. |
 | Volume, `<volume>` | **Applied in software.** The engine reports a volume attribute, accepts writes to it, and then produces byte-identical audio at every setting — measured across the whole range. Left to the engine, a volume slider would do nothing. |
-| `<silence msec>` | Emitted as `\Pau=N\`, which **this engine ignores** — see below. |
+| `<silence msec>` | Silence of that length, written into the audio where the element is, because this engine ignores `\Pau=N\` — see below. |
 | `<spell>` | Emitted as `\RmS=1\` … `\RmS=0\`, which **this engine ignores** — see below. |
 | Bookmarks | `\mrk=N\`, reported back with an exact audio offset |
 | `SPEI_WORD_BOUNDARY` | A `\mrk\` inserted before each **whitespace-delimited run**, never inside one. The event still reports the trimmed word, so a highlight lands on `world` rather than `world,`. See the note below on why marks must not go inside a run. |
@@ -181,6 +181,29 @@ The installer writes its own log and keeps a copy as `install.log` beside the pr
 SAPI 4 sets rate, pitch and volume once per utterance, so consecutive fragments that agree
 about prosody are merged into one engine call and a change starts a new one. That is as
 fine-grained as the engine can be driven.
+
+### Control tags written in the text
+
+As under SAPI 4, a program can write the engine's own tags into the text it hands over:
+`\Pit=30\` in Balabolka gives a deeper voice than any pitch control reaches, and
+`\Vce=Speaker="Lucy"\` changes voice. A tag is obeyed only when it is exactly well formed, so
+a path such as `C:\Windows\System32` is still read out. A tag lasts to the end of what the
+program hands over in one go, and then the program's own voice and settings come back. The
+`ControlTags` setting, "Obey the engine's own control tags in the text" in the configuration
+utility, turns this off.
+
+The engine carries out `\Spd=`, `\Pit=` and `\Rst\` itself. `\Pau=` and `\Vol=` change
+nothing in the audio it hands back, so they are carried out here: `\Pau=` writes that many
+milliseconds of silence into the audio where the tag is, and `\Vol=` scales the audio from
+there on, 65535 being full volume and 0 silence. `\Mrk=` becomes a SAPI 5 bookmark.
+
+`\Vce=` changes voice with `Speaker`, which is a voice's name such as `Lucy`, the name it has
+in SAPI 5 or part of it, or with `Language`, such as `German`, which gives the first male
+voice for that language, the one the engine would pick. The engine can change voice itself,
+but only with the value in quotes, and then it keeps the new voice when the text is done and
+forgets the rate and pitch the program asked for. So the change is made here instead, and the
+rest of the text goes to the voice named as if the program had chosen it. `Gender` and `Age`
+go to the engine, which ignores them.
 
 The engine has one further attribute, SAPI 4's `RealTime`. It reads back `0x7FFFFFFF`, SAPI 5
 has no concept that maps onto it, and setting it changes nothing that can be measured. It is
@@ -201,12 +224,14 @@ so a tag that changes nothing is unambiguous.
 | `\mrk\` | Works, and is acoustically free, which is what word and sentence events are built on. |
 | `\Vol\`, `VolumeSet` | Accepted, ignored. Volume is applied to the samples instead. |
 | `RealTimeSet` | Accepted, ignored. |
-| `\Pau\`, `\RmS\`, `\RmW\`, `\Emp\`, `\Chr\`, `\Ctx\`, `\Prt\`, `\Vce\`, `\Com\`, `\Eng\`, `\Prn\` | Parsed out of the text and ignored. They are not spoken aloud, so emitting them is harmless, but they do nothing. |
+| `\Vce\` | `Speaker` and `Language` change voice, but only with the value in quotes, and the new voice stays when the text is done. `Gender`, `Age`, `Accent` and `Style` are ignored. |
+| `\Pau\`, `\RmS\`, `\RmW\`, `\Emp\`, `\Chr\`, `\Ctx\`, `\Prt\`, `\Com\`, `\Eng\`, `\Prn\` | Parsed out of the text and ignored. They are not spoken aloud, so emitting them is harmless, but they do nothing. |
 
 Two consequences worth stating plainly, because the table above used to claim otherwise:
-**`<silence>` produces no silence and `<spell>` does not spell out.** Both could be done in
-software the way volume is — writing the silence into the stream, and spacing the characters
-out before the engine sees them — and neither is done yet.
+**the engine produces no silence for `\Pau\`, and `<spell>` does not spell out.** The silence
+is written into the stream here instead, the way volume is applied to the samples. Spelling
+could be done the same way, by spacing the characters out before the engine sees them, and
+is not done yet.
 
 The engine's sixteen voices are equally fixed. A section added to `VoiceDescriptions.txt` by
 hand is not enumerated, and changing an existing section's `Pitch`, `Dynamic`, `Aspiration`,

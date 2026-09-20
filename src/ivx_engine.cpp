@@ -1319,6 +1319,9 @@ HRESULT Engine::Impl::speak(const SpeakParams& params, SynthSink& sink)
                 }
             }
         }
+        if (!batch.empty()) {
+            last_progress = GetTickCount();
+        }
 
         if (!aborted && sink.should_abort()) {
             IVX_LOG_I("sink reported abort");

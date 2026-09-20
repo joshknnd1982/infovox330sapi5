@@ -28,16 +28,19 @@ namespace ivx {
 namespace sapi {
 
 // One entry per "\mrk=N\" tag written into the text handed to the engine. Marks carry
-// either a SAPI bookmark or a word boundary back out of the engine with an exact audio
-// offset attached, which is the whole reason for inserting them.
+// a SAPI bookmark, a word boundary, or the place a pause or a volume change belongs, back
+// out of the engine with an exact audio offset attached, which is the whole reason for
+// inserting them.
 struct MarkInfo {
-    enum class Kind { Bookmark, Word, Sentence };
+    enum class Kind { Bookmark, Word, Sentence, Pause, Volume };
 
     Kind kind = Kind::Word;
     std::wstring bookmark_text;  // the text of a SAPI bookmark, verbatim
     LONG bookmark_number = 0;
     ULONG text_offset = 0;
     ULONG text_length = 0;
+    ULONG silence_ms = 0;
+    int volume_percent = 100;
 };
 
 class __declspec(uuid("61b158b8-3639-4b87-8944-9d55320c6f80")) ISpTTSEngineImpl :
@@ -79,22 +82,29 @@ private:
         int rate = 0;           // combined SAPI rate, -10..10
         int pitch_adj = 0;      // SAPI middle-pitch adjustment, -10..10
         int volume_pct = 100;   // 0..100
+        VoiceSettings settings;
+        unsigned voice = 0;
+        std::size_t carried = 0;
         std::size_t first_mark = 0;
         std::size_t end_mark = 0;
-        bool empty() const { return text.empty(); }
+        bool empty() const { return text.size() <= carried; }
     };
 
     HRESULT ensure_backend();
     HRESULT ranges_for(const GUID& mode, VoiceRanges& out);
     [[nodiscard]] DWORD next_mark_id(MarkInfo info);
+    void append_mark(Run& run, MarkInfo mark);
+    void append_tags(Run& run, const std::wstring& tagged);
     void append_escaped(std::wstring& out, const wchar_t* text, ULONG length);
 
     // Walks a fragment run by whitespace-delimited run, optionally writing a word mark in
     // front of each and substituting any word the voice has a replacement for.
-    void append_fragment(std::wstring& out, const SPVTEXTFRAG* frag, bool with_marks);
+    void append_fragment(Run& run, const wchar_t* text, ULONG length, ULONG source_offset,
+                         bool with_marks);
 
     // The replacement for one word, or nullptr when the voice has none.
-    [[nodiscard]] const std::wstring* substitution_for(const wchar_t* word, ULONG length) const;
+    [[nodiscard]] static const std::wstring* substitution_for(const Run& run, const wchar_t* word,
+                                                              ULONG length);
 
     // Re-reads the voice's settings if the configuration file has changed since they were
     // last taken. A speaking application stays loaded for days, so a change made in the

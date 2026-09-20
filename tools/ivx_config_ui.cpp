@@ -995,6 +995,8 @@ void load_engine_page()
                    e.software_volume ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(g_app.page[2], IDC_HIDE_BUILTIN,
                    e.hide_builtin ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(g_app.page[2], IDC_CONTROL_TAGS,
+                   e.control_tags ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(g_app.page[2], IDC_SET_ENGINE_VOLUME,
                    e.set_engine_volume ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(g_app.page[2], IDC_REALTIME_ENABLE,
@@ -1012,6 +1014,7 @@ void store_engine_page()
     e.sentence_events = IsDlgButtonChecked(g_app.page[2], IDC_SENTENCE_EVENTS) == BST_CHECKED;
     e.software_volume = IsDlgButtonChecked(g_app.page[2], IDC_SOFTWARE_VOLUME) == BST_CHECKED;
     e.hide_builtin = IsDlgButtonChecked(g_app.page[2], IDC_HIDE_BUILTIN) == BST_CHECKED;
+    e.control_tags = IsDlgButtonChecked(g_app.page[2], IDC_CONTROL_TAGS) == BST_CHECKED;
     e.set_engine_volume =
         IsDlgButtonChecked(g_app.page[2], IDC_SET_ENGINE_VOLUME) == BST_CHECKED;
     e.realtime = IsDlgButtonChecked(g_app.page[2], IDC_REALTIME_ENABLE) == BST_CHECKED

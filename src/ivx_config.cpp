@@ -291,6 +291,8 @@ void parse(const std::wstring& text, Config& cfg)
                     cfg.engine.software_volume = to_bool(value, true);
                 } else if (iequals(key, L"HideBuiltInVoices")) {
                     cfg.engine.hide_builtin = to_bool(value, false);
+                } else if (iequals(key, L"ControlTags")) {
+                    cfg.engine.control_tags = to_bool(value, true);
                 } else if (iequals(key, L"SetEngineVolume")) {
                     cfg.engine.set_engine_volume = to_bool(value, false);
                 } else if (iequals(key, L"RealTime")) {
@@ -469,6 +471,7 @@ bool save_config(const Config& cfg)
            L"\r\n";
     out += std::wstring(L"HideBuiltInVoices=") + (cfg.engine.hide_builtin ? L"1" : L"0") +
            L"\r\n";
+    out += std::wstring(L"ControlTags=") + (cfg.engine.control_tags ? L"1" : L"0") + L"\r\n";
     out += std::wstring(L"SetEngineVolume=") + (cfg.engine.set_engine_volume ? L"1" : L"0") +
            L"\r\n";
     wchar_t buf[64];

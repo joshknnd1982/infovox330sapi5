@@ -7,6 +7,7 @@
 
 #include "ivx_log.hpp"
 #include "ivx_paths.hpp"
+#include "ivx_tags.hpp"
 
 namespace ivx {
 namespace sapi {
@@ -25,6 +26,8 @@ constexpr double kDefaultPitchSpanFactor = 2.0;
 // than after a whole sentence has already been passed over.
 constexpr ULONG kWriteChunkBytes = 4096;
 
+constexpr unsigned long kLongestPauseMs = 60000;
+
 [[nodiscard]] bool is_word_char(wchar_t c)
 {
     return iswalnum(static_cast<wint_t>(c)) != 0 || c == L'\'' || c == L'-';
@@ -35,13 +38,90 @@ constexpr ULONG kWriteChunkBytes = 4096;
     return (std::max)(-10, (std::min)(10, value));
 }
 
+[[nodiscard]] bool same_text(const std::wstring& a, const std::wstring& b)
+{
+    return _wcsicmp(a.c_str(), b.c_str()) == 0;
+}
+
+[[nodiscard]] bool contains_text(std::wstring text, std::wstring part)
+{
+    CharLowerBuffW(text.data(), static_cast<DWORD>(text.size()));
+    CharLowerBuffW(part.data(), static_cast<DWORD>(part.size()));
+    return text.find(part) != std::wstring::npos;
+}
+
+[[nodiscard]] VoiceSettings settings_of(const VoiceDesc& voice)
+{
+    VoiceSettings settings = settings_for_voice(voice.token_name());
+    if (settings.rate_span <= 0.0) {
+        settings.rate_span = kDefaultRateSpanFactor;
+    }
+    if (settings.pitch_span <= 0.0) {
+        settings.pitch_span = kDefaultPitchSpanFactor;
+    }
+    return settings;
+}
+
+// A Language gets the voice the engine itself would pick: the first male one.
+[[nodiscard]] const VoiceDesc* voice_named(const tags::Token& token, const VoiceDesc& now)
+{
+    if (!token.speaker.empty()) {
+        for (const bool loose : {false, true}) {
+            for (const auto* voices : {&voice_catalogue(), &builtin_catalogue()}) {
+                for (const VoiceDesc& v : *voices) {
+                    if (loose ? contains_text(v.display_name(), token.speaker)
+                              : same_text(v.token_name(), token.speaker) ||
+                                    same_text(v.display_name(), token.speaker)) {
+                        return &v;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!token.language.empty()) {
+        std::wstring wanted = token.language;
+        if (same_text(wanted, L"English") &&
+            (same_text(token.accent, L"American") || same_text(token.accent, L"British"))) {
+            wanted = token.accent + L" English";
+        } else if (same_text(wanted, L"American") || same_text(wanted, L"British")) {
+            wanted += L" English";
+        }
+        for (const bool loose : {false, true}) {
+            const auto speaks = [&](const VoiceDesc& v) {
+                return loose ? contains_text(v.language_name, wanted)
+                             : same_text(v.language_name, wanted);
+            };
+            if (speaks(now)) {
+                return &now;
+            }
+            const VoiceDesc* first = nullptr;
+            for (const VoiceDesc& v : builtin_catalogue()) {
+                if (!speaks(v)) {
+                    continue;
+                }
+                if (v.gender == 2) {
+                    return &v;
+                }
+                if (!first) {
+                    first = &v;
+                }
+            }
+            if (first) {
+                return first;
+            }
+        }
+    }
+    return nullptr;
+}
+
 // Feeds one utterance into ISpTTSEngineSite, turning marks back into SAPI events.
 class SiteSink : public SynthSink
 {
 public:
     SiteSink(ISpTTSEngineSite* site, SynthBackend* backend, const std::vector<MarkInfo>& marks,
              std::size_t first_mark, std::size_t end_mark, ULONGLONG stream_base,
-             int volume_percent, WORD bits_per_sample)
+             int volume_percent, const WAVEFORMATEX& format)
         : site_(site),
           backend_(backend),
           marks_(marks),
@@ -49,43 +129,35 @@ public:
           reported_(end_mark - first_mark, false),
           stream_base_(stream_base),
           volume_percent_(volume_percent),
-          bits_per_sample_(bits_per_sample)
+          bits_per_sample_(format.wBitsPerSample ? format.wBitsPerSample : kExpectedBitsPerSample),
+          bytes_per_second_(format.nAvgBytesPerSec),
+          block_align_(format.nBlockAlign ? format.nBlockAlign : 1)
     {
     }
 
+    // A mark arrives ahead of the audio it belongs to, so a pause or a change of volume
+    // waits here until the audio reaches it.
     bool on_audio(const void* data, DWORD size) override
     {
         const BYTE* p = static_cast<const BYTE*>(data);
         ULONG remaining = size;
-
-        // The engine ignores its own volume attribute, so the gain is applied here. A copy
-        // is needed because the buffer belongs to the engine.
-        if (volume_percent_ < 100) {
-            scratch_.assign(p, p + size);
-            apply_volume(scratch_.data(), scratch_.size(), volume_percent_, bits_per_sample_);
-            p = scratch_.data();
-        }
-
         while (remaining > 0) {
-            if (check_actions()) {
+            ULONG take = remaining;
+            if (!pending_.empty() && pending_.front().first < delivered_ + remaining) {
+                take = static_cast<ULONG>(
+                    pending_.front().first > delivered_ ? pending_.front().first - delivered_ : 0);
+            }
+            if (take > 0) {
+                if (!write_audio(p, take)) {
+                    return false;
+                }
+                p += take;
+                remaining -= take;
+                delivered_ += take;
+            }
+            if (!release(delivered_)) {
                 return false;
             }
-            const ULONG want = (std::min)(remaining, kWriteChunkBytes);
-            ULONG written = 0;
-            const HRESULT hr = site_->Write(p, want, &written);
-            if (FAILED(hr)) {
-                IVX_LOG_E("ISpTTSEngineSite::Write failed %s", hresult_string(hr).c_str());
-                aborted_ = true;
-                return false;
-            }
-            if (written == 0 || written > want) {
-                IVX_LOG_E("ISpTTSEngineSite::Write accepted %lu of %lu bytes", written, want);
-                aborted_ = true;
-                return false;
-            }
-            bytes_written_ += written;
-            remaining -= written;
-            p += written;
         }
         return true;
     }
@@ -100,7 +172,15 @@ public:
             reported_[id - 1 - first_mark_] = true;
         }
         const MarkInfo& mark = marks_[id - 1];
-        const ULONGLONG offset = stream_base_ + audio_offset;
+        if (mark.kind == MarkInfo::Kind::Pause || mark.kind == MarkInfo::Kind::Volume) {
+            if (mark.kind == MarkInfo::Kind::Pause) {
+                scheduled_ += silence_bytes(mark.silence_ms);
+            }
+            pending_.emplace_back(audio_offset - audio_offset % block_align_, &mark);
+            release(delivered_);
+            return;
+        }
+        const ULONGLONG offset = stream_base_ + scheduled_ + audio_offset;
 
         SPEVENT event = {};
         event.ulStreamNum = 0;
@@ -151,9 +231,10 @@ public:
     {
         for (std::size_t i = 0; i < reported_.size(); ++i) {
             if (!reported_[i]) {
-                on_bookmark(bytes_written_, static_cast<DWORD>(first_mark_ + i + 1));
+                on_bookmark(delivered_, static_cast<DWORD>(first_mark_ + i + 1));
             }
         }
+        release(~0ull);
     }
 
     [[nodiscard]] ULONGLONG bytes_written() const { return bytes_written_; }
@@ -161,6 +242,72 @@ public:
     [[nodiscard]] bool skipped() const { return skipped_; }
 
 private:
+    bool write(const BYTE* p, ULONG remaining)
+    {
+        while (remaining > 0) {
+            if (check_actions()) {
+                return false;
+            }
+            const ULONG want = (std::min)(remaining, kWriteChunkBytes);
+            ULONG written = 0;
+            const HRESULT hr = site_->Write(p, want, &written);
+            if (FAILED(hr)) {
+                IVX_LOG_E("ISpTTSEngineSite::Write failed %s", hresult_string(hr).c_str());
+                aborted_ = true;
+                return false;
+            }
+            if (written == 0 || written > want) {
+                IVX_LOG_E("ISpTTSEngineSite::Write accepted %lu of %lu bytes", written, want);
+                aborted_ = true;
+                return false;
+            }
+            bytes_written_ += written;
+            remaining -= written;
+            p += written;
+        }
+        return true;
+    }
+
+    // The engine ignores its own volume attribute, so the gain is applied here. A copy is
+    // needed because the buffer belongs to the engine.
+    bool write_audio(const BYTE* p, ULONG size)
+    {
+        const int gain = volume_percent_ * tag_volume_ / 100;
+        if (gain < 100) {
+            scratch_.assign(p, p + size);
+            apply_volume(scratch_.data(), scratch_.size(), gain, bits_per_sample_);
+            p = scratch_.data();
+        }
+        return write(p, size);
+    }
+
+    [[nodiscard]] ULONG silence_bytes(ULONG ms) const
+    {
+        return static_cast<ULONG>(static_cast<ULONGLONG>(ms) * bytes_per_second_ / 1000) /
+               block_align_ * block_align_;
+    }
+
+    bool release(ULONGLONG reached)
+    {
+        static const BYTE zeros[kWriteChunkBytes] = {};
+        while (!pending_.empty() && pending_.front().first <= reached) {
+            const MarkInfo& mark = *pending_.front().second;
+            pending_.erase(pending_.begin());
+            if (mark.kind == MarkInfo::Kind::Volume) {
+                tag_volume_ = mark.volume_percent;
+                continue;
+            }
+            for (ULONG left = silence_bytes(mark.silence_ms); left > 0;) {
+                const ULONG chunk = (std::min)(left, kWriteChunkBytes);
+                if (!write(zeros, chunk)) {
+                    return false;
+                }
+                left -= chunk;
+            }
+        }
+        return true;
+    }
+
     // Returns true when the utterance should stop.
     bool check_actions()
     {
@@ -190,8 +337,14 @@ private:
     std::vector<bool> reported_;
     ULONGLONG stream_base_;
     ULONGLONG bytes_written_ = 0;
+    ULONGLONG delivered_ = 0;
+    ULONGLONG scheduled_ = 0;
+    std::vector<std::pair<ULONGLONG, const MarkInfo*>> pending_;
     int volume_percent_ = 100;
+    int tag_volume_ = 100;
     WORD bits_per_sample_ = 16;
+    DWORD bytes_per_second_ = 0;
+    WORD block_align_ = 1;
     std::vector<BYTE> scratch_;
     bool aborted_ = false;
     bool skipped_ = false;
@@ -242,6 +395,34 @@ DWORD ISpTTSEngineImpl::next_mark_id(MarkInfo info)
     return static_cast<DWORD>(marks_.size());  // ids are 1-based
 }
 
+void ISpTTSEngineImpl::append_mark(Run& run, MarkInfo mark)
+{
+    wchar_t tag[32];
+    _snwprintf_s(tag, _TRUNCATE, L"\\mrk=%lu\\", next_mark_id(std::move(mark)));
+    run.text.append(tag);
+}
+
+// Neither \Pau= nor \Vol= changes the audio the engine hands back, so those two become marks
+// that the audio is paused or turned down at; every other tag goes to the engine as it is.
+void ISpTTSEngineImpl::append_tags(Run& run, const std::wstring& tagged)
+{
+    for (const tags::Token& token : tags::scan(tagged.data(), tagged.size())) {
+        if (token.kind == tags::Kind::Pause) {
+            MarkInfo mark;
+            mark.kind = MarkInfo::Kind::Pause;
+            mark.silence_ms = (std::min)(token.number, kLongestPauseMs);
+            append_mark(run, std::move(mark));
+        } else if (token.kind == tags::Kind::Volume) {
+            MarkInfo mark;
+            mark.kind = MarkInfo::Kind::Volume;
+            mark.volume_percent = static_cast<int>((std::min)(token.number, 65535ul) * 100 / 65535);
+            append_mark(run, std::move(mark));
+        } else {
+            run.text.append(tagged, token.begin, token.length);
+        }
+    }
+}
+
 void ISpTTSEngineImpl::append_escaped(std::wstring& out, const wchar_t* text, ULONG length)
 {
     // Tagged text treats a backslash as the start of a command, so literal ones are doubled.
@@ -256,13 +437,13 @@ void ISpTTSEngineImpl::append_escaped(std::wstring& out, const wchar_t* text, UL
     }
 }
 
-const std::wstring* ISpTTSEngineImpl::substitution_for(const wchar_t* word,
-                                                      ULONG length) const
+const std::wstring* ISpTTSEngineImpl::substitution_for(const Run& run, const wchar_t* word,
+                                                      ULONG length)
 {
-    if (settings_.substitutions.empty() || length == 0) {
+    if (run.settings.substitutions.empty() || length == 0) {
         return nullptr;
     }
-    for (const auto& sub : settings_.substitutions) {
+    for (const auto& sub : run.settings.substitutions) {
         if (sub.from.size() == length &&
             _wcsnicmp(sub.from.c_str(), word, length) == 0) {
             return &sub.to;
@@ -274,13 +455,12 @@ const std::wstring* ISpTTSEngineImpl::substitution_for(const wchar_t* word,
 // Marks and substitutions both work on whitespace-delimited runs, so one walk does both.
 // with_marks is false when the application has not asked for word events, and then this is
 // only here to give substitutions somewhere to happen.
-void ISpTTSEngineImpl::append_fragment(std::wstring& out, const SPVTEXTFRAG* frag,
-                                       bool with_marks)
+void ISpTTSEngineImpl::append_fragment(Run& run, const wchar_t* text, ULONG length,
+                                       ULONG source_offset, bool with_marks)
 {
-    const wchar_t* text = frag->pTextStart;
-    const ULONG length = frag->ulTextLen;
+    std::wstring& out = run.text;
 
-    if (!with_marks && settings_.substitutions.empty()) {
+    if (!with_marks && run.settings.substitutions.empty()) {
         append_escaped(out, text, length);
         return;
     }
@@ -319,7 +499,7 @@ void ISpTTSEngineImpl::append_fragment(std::wstring& out, const SPVTEXTFRAG* fra
         if (with_marks && word_start < word_end) {
             MarkInfo mark;
             mark.kind = MarkInfo::Kind::Word;
-            mark.text_offset = frag->ulTextSrcOffset + word_start;
+            mark.text_offset = source_offset + word_start;
             mark.text_length = word_end - word_start;
 
             wchar_t tag[32];
@@ -333,7 +513,7 @@ void ISpTTSEngineImpl::append_fragment(std::wstring& out, const SPVTEXTFRAG* fra
         // highlighting the source needs.
         const std::wstring* replacement =
             (word_start < word_end)
-                ? substitution_for(text + word_start, word_end - word_start)
+                ? substitution_for(run, text + word_start, word_end - word_start)
                 : nullptr;
         if (replacement) {
             append_escaped(out, text + start, word_start - start);
@@ -353,13 +533,7 @@ void ISpTTSEngineImpl::refresh_settings()
         return;
     }
     settings_generation_ = generation;
-    settings_ = settings_for_voice(voice_.token_name());
-    if (settings_.rate_span <= 0.0) {
-        settings_.rate_span = kDefaultRateSpanFactor;
-    }
-    if (settings_.pitch_span <= 0.0) {
-        settings_.pitch_span = kDefaultPitchSpanFactor;
-    }
+    settings_ = settings_of(voice_);
 }
 
 STDMETHODIMP ISpTTSEngineImpl::SetObjectToken(ISpObjectToken* pToken)
@@ -528,6 +702,11 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
         Run current;
         bool have_current = false;
 
+        VoiceDesc speaking = voice_;
+        VoiceSettings speaking_settings = settings_;
+        unsigned speaking_serial = 0;
+        tags::Carried carried;
+
         for (const SPVTEXTFRAG* frag = pTextFragList; frag; frag = frag->pNext) {
             const int rate = clamp_rate(static_cast<int>(site_rate) + frag->State.RateAdj);
             const int pitch_adj = clamp_rate(frag->State.PitchAdj.MiddleAdj);
@@ -538,34 +717,55 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
             // A <lang> tag naming a language this voice does not speak switches to one that
             // does, for as long as the tag lasts. Without this an English voice would be
             // asked to read French, which it will happily do very badly.
-            GUID mode = voice_.mode_guid;
-            if (frag->State.LangID != 0 && frag->State.LangID != voice_.sapi_lcid()) {
-                const VoiceDesc* alternate =
-                    find_voice_for_language(frag->State.LangID, voice_.gender);
-                if (alternate) {
-                    mode = alternate->mode_guid;
-                    IVX_LOG_D("language %04x -> voice '%s'", frag->State.LangID,
-                              log_narrow(alternate->speaker.c_str()).c_str());
-                } else {
-                    IVX_LOG_D("no voice speaks language %04x; staying with '%s'",
-                              frag->State.LangID, log_narrow(voice_.speaker.c_str()).c_str());
+            const auto language_voice = [&] {
+                GUID mode = speaking.mode_guid;
+                if (frag->State.LangID != 0 && frag->State.LangID != voice_.sapi_lcid() &&
+                    frag->State.LangID != speaking.sapi_lcid()) {
+                    const VoiceDesc* alternate =
+                        find_voice_for_language(frag->State.LangID, speaking.gender);
+                    if (alternate) {
+                        mode = alternate->mode_guid;
+                        IVX_LOG_D("language %04x -> voice '%s'", frag->State.LangID,
+                                  log_narrow(alternate->speaker.c_str()).c_str());
+                    } else {
+                        IVX_LOG_D("no voice speaks language %04x; staying with '%s'",
+                                  frag->State.LangID,
+                                  log_narrow(speaking.speaker.c_str()).c_str());
+                    }
                 }
-            }
+                return mode;
+            };
+            GUID mode = language_voice();
 
-            if (!have_current || !IsEqualGUID(current.mode, mode) || current.rate != rate ||
-                current.pitch_adj != pitch_adj || current.volume_pct != volume_pct) {
-                if (have_current && !current.empty()) {
-                    current.end_mark = marks_.size();
-                    runs.push_back(std::move(current));
+            const auto open_run = [&] {
+                if (have_current && IsEqualGUID(current.mode, mode) && current.rate == rate &&
+                    current.pitch_adj == pitch_adj && current.volume_pct == volume_pct &&
+                    current.voice == speaking_serial) {
+                    return;
+                }
+                if (have_current) {
+                    carried.yield_to(
+                        (rate != current.rate ? tags::effect::kRate : 0u) |
+                        (pitch_adj != current.pitch_adj ? tags::effect::kPitch : 0u) |
+                        (volume_pct != current.volume_pct ? tags::effect::kVolume : 0u));
+                    if (!current.empty()) {
+                        current.end_mark = marks_.size();
+                        runs.push_back(std::move(current));
+                    }
                 }
                 current = Run{};
                 current.mode = mode;
                 current.rate = rate;
                 current.pitch_adj = pitch_adj;
                 current.volume_pct = volume_pct;
+                current.settings = speaking_settings;
+                current.voice = speaking_serial;
                 current.first_mark = marks_.size();
                 have_current = true;
-            }
+                append_tags(current, carried.tags());
+                current.carried = current.text.size();
+            };
+            open_run();
 
             switch (frag->State.eAction) {
                 case SPVA_Bookmark: {
@@ -585,9 +785,11 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
 
                 case SPVA_Silence: {
                     if (frag->State.SilenceMSecs > 0) {
-                        wchar_t tag[32];
-                        _snwprintf_s(tag, _TRUNCATE, L"\\Pau=%u\\", frag->State.SilenceMSecs);
-                        current.text.append(tag);
+                        MarkInfo mark;
+                        mark.kind = MarkInfo::Kind::Pause;
+                        mark.silence_ms = (std::min)(
+                            static_cast<unsigned long>(frag->State.SilenceMSecs), kLongestPauseMs);
+                        append_mark(current, std::move(mark));
                     }
                     break;
                 }
@@ -634,20 +836,77 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
                     if (frag->ulTextLen == 0 || !frag->pTextStart) {
                         break;
                     }
-                    if (want_sentence_events) {
-                        // Carried by a mark like everything else, so the event lands at the
-                        // audio offset where the fragment actually starts rather than at
-                        // the top of the stream.
-                        MarkInfo mark;
-                        mark.kind = MarkInfo::Kind::Sentence;
-                        mark.text_offset = frag->ulTextSrcOffset;
-                        mark.text_length = frag->ulTextLen;
-                        wchar_t tag[32];
-                        _snwprintf_s(tag, _TRUNCATE, L"\\mrk=%lu\\",
-                                     next_mark_id(std::move(mark)));
-                        current.text.append(tag);
+                    bool sentence_due = want_sentence_events;
+                    const auto speak_text = [&](const wchar_t* text, ULONG length, ULONG source) {
+                        open_run();
+                        if (sentence_due) {
+                            // Carried by a mark like everything else, so the event lands at the
+                            // audio offset where the fragment actually starts rather than at
+                            // the top of the stream.
+                            MarkInfo mark;
+                            mark.kind = MarkInfo::Kind::Sentence;
+                            mark.text_offset = frag->ulTextSrcOffset;
+                            mark.text_length = frag->ulTextLen;
+                            append_mark(current, std::move(mark));
+                            sentence_due = false;
+                        }
+                        append_fragment(current, text, length, source, want_word_events_);
+                    };
+                    if (!engine_settings.control_tags) {
+                        speak_text(frag->pTextStart, frag->ulTextLen, frag->ulTextSrcOffset);
+                        break;
                     }
-                    append_fragment(current.text, frag, want_word_events_);
+                    for (const tags::Token& token : tags::scan(frag->pTextStart, frag->ulTextLen)) {
+                        const ULONG source = frag->ulTextSrcOffset + static_cast<ULONG>(token.begin);
+                        switch (token.kind) {
+                            case tags::Kind::Text:
+                                speak_text(frag->pTextStart + token.begin,
+                                           static_cast<ULONG>(token.length), source);
+                                break;
+
+                            case tags::Kind::Bookmark: {
+                                MarkInfo mark;
+                                mark.kind = MarkInfo::Kind::Bookmark;
+                                mark.bookmark_text = token.value;
+                                mark.bookmark_number = static_cast<LONG>(token.number);
+                                mark.text_offset = source;
+                                mark.text_length = static_cast<ULONG>(token.length);
+                                open_run();
+                                append_mark(current, std::move(mark));
+                                break;
+                            }
+
+                            case tags::Kind::Voice: {
+                                const VoiceDesc* chosen = voice_named(token, speaking);
+                                if (!chosen && (!token.speaker.empty() || !token.language.empty())) {
+                                    IVX_LOG_W("no installed voice answers to \\Vce=%s\\",
+                                              log_narrow(token.value.c_str()).c_str());
+                                } else if (chosen &&
+                                           !same_text(chosen->token_name(), speaking.token_name())) {
+                                    IVX_LOG_D("\\Vce= in the text: '%s' -> '%s'",
+                                              log_narrow(speaking.token_name().c_str()).c_str(),
+                                              log_narrow(chosen->token_name().c_str()).c_str());
+                                    speaking = *chosen;
+                                    speaking_settings = settings_of(speaking);
+                                    ++speaking_serial;
+                                    mode = language_voice();
+                                    carried.forget(tags::effect::kPitch | tags::effect::kVoiceParams);
+                                }
+                                if (!token.tag.empty()) {
+                                    open_run();
+                                    append_tags(current, token.tag);
+                                    carried.note(token.effects, token.tag);
+                                }
+                                break;
+                            }
+
+                            default:
+                                open_run();
+                                append_tags(current, token.tag);
+                                carried.note(token.effects, token.tag);
+                                break;
+                        }
+                    }
                     break;
                 }
             }
@@ -693,18 +952,18 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
             // The voice's own rate and pitch are the neutral point that SAPI's -10..+10
             // moves around, so a voice configured to speak at 220 words per minute still
             // has the whole slider either side of 220 rather than either side of 150.
-            const DWORD base_speed = ranges.speed.clamped(settings_.rate);
-            const DWORD base_pitch = ranges.pitch.clamped(settings_.pitch);
+            const DWORD base_speed = ranges.speed.clamped(run.settings.rate);
+            const DWORD base_pitch = ranges.pitch.clamped(run.settings.pitch);
 
             params.text = run.text;
             params.speed = ranges.speed.supported
                                ? static_cast<int>(ranges.speed.scaled_from(
-                                     base_speed, std::pow(settings_.rate_span,
+                                     base_speed, std::pow(run.settings.rate_span,
                                                           run.rate / 10.0)))
                                : -1;
             params.pitch = ranges.pitch.supported
                                ? static_cast<int>(ranges.pitch.scaled_from(
-                                     base_pitch, std::pow(settings_.pitch_span,
+                                     base_pitch, std::pow(run.settings.pitch_span,
                                                           run.pitch_adj / 10.0)))
                                : -1;
             // The engine's own volume control was measured to do nothing - it accepts a
@@ -725,12 +984,12 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
             // Whatever the user put in the voice's tag prefix, in front of every utterance.
             // The space matters: tagged text escapes a literal backslash as "\\", so a
             // prefix ending in one butted straight against a tag would swallow that tag.
-            if (!settings_.prefix.empty()) {
-                params.text = settings_.prefix + L" " + params.text;
+            if (!run.settings.prefix.empty()) {
+                params.text = run.settings.prefix + L" " + params.text;
             }
 
             const int gain = engine_settings.software_volume
-                                 ? run.volume_pct * settings_.volume / 100
+                                 ? run.volume_pct * run.settings.volume / 100
                                  : 100;
 
             IVX_LOG_D("run: rate=%d -> speed=%d (base %lu), pitch=%d -> %d (base %lu), "
@@ -739,8 +998,7 @@ STDMETHODIMP ISpTTSEngineImpl::Speak(DWORD dwSpeakFlags, REFGUID /*rguidFormatId
                       base_pitch, gain, run.text.size());
 
             SiteSink sink(pOutputSite, backend_.get(), marks_, run.first_mark, run.end_mark,
-                          stream_offset, gain,
-                          actual.wBitsPerSample ? actual.wBitsPerSample : kExpectedBitsPerSample);
+                          stream_offset, gain, actual);
             const HRESULT run_hr = backend_->speak(params, sink);
             if (SUCCEEDED(run_hr) && !sink.aborted()) {
                 sink.finish();

@@ -65,6 +65,7 @@
 #define IDC_OPEN_CONFIG         1309
 #define IDC_ENGINE_REPORT       1310
 #define IDC_CONFIG_PATH         1311
+#define IDC_CONTROL_TAGS        1312
 
 // ---- the name prompt -------------------------------------------------------------------
 #define IDC_PROMPT_LABEL        1400

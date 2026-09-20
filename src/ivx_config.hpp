@@ -104,6 +104,8 @@ struct EngineSettings {
     // through the built-in ones; this only affects what is offered.
     bool hide_builtin = false;
 
+    bool control_tags = true;
+
     // Both of these were measured to change nothing about the audio. They are here because
     // they are the remaining things the engine will accept, and hiding a control is not the
     // same as reporting that it does nothing.
