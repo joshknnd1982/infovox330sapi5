@@ -21,7 +21,7 @@
   #define StageDir "..\output"
 #endif
 #ifndef Version
-  #define Version "1.0.1"
+  #define Version "1.0.2"
 #endif
 
 #define AppName        "Infovox 330 SAPI 5"

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Infovox330SAPI VERSION 1.0.1 LANGUAGES CXX)
+project(Infovox330SAPI VERSION 1.0.2 LANGUAGES CXX)
 
 # The engine is 32-bit only, so this project is built twice: once as Win32, where the SAPI 5
 # DLL loads the engine in-process, and once as x64, where it talks to the 32-bit helper over

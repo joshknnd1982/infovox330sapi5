@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.0.2
+
+Control tags in the text, the whole of the engine's rate and pitch range, and bookmarks in
+the right place. Contributed by Aksel Christoffersen in
+[#1](https://github.com/joshknnd1982/infovox330sapi5/pull/1).
+
+### Control tags in the text
+
+As under SAPI 4, a program can write the engine's own tags into the text it hands over:
+`\Pit=30\` in Balabolka gives a deeper voice than any pitch control reaches, and
+`\Vce=Speaker="Lucy"\` changes voice. A tag is obeyed only when it is exactly well formed, so
+a path such as `C:\Windows\System32` is still read out. A tag lasts to the end of what the
+program hands over in one go, and then the program's own voice and settings come back.
+
+The engine carries out `\Spd=`, `\Pit=` and `\Rst\` itself. `\Pau=` and `\Vol=` change
+nothing in the audio it hands back, so they are carried out here: `\Pau=` writes that many
+milliseconds of silence into the audio where the tag is, and `\Vol=` scales the audio from
+there on. `\Mrk=` becomes a SAPI 5 bookmark. **Obey the engine's own control tags in the
+text**, in the configuration utility (`ControlTags` in the settings file), turns all of this
+off.
+
+That silence is also what SAPI 5's `<silence msec>` now produces. Until this release it
+produced none, because it was passed to the engine as `\Pau\`, which the engine ignores.
+
+### The whole of the engine's rate and pitch range
+
+An application's rate and pitch controls now reach as far as the engine goes, as they could
+under SAPI 4: −10 to +10 spans 45 to 499 words per minute and 30 to 250 hertz, either side of
+the voice's own rate and pitch. The old default, ⅓× to 3× speed and an octave of pitch, left
+most of the engine out of reach. A multiplier set for a voice still keeps it inside a band,
+and 0, now the default, means the engine's whole range. A voice saved with the old defaults,
+3 and 2, is read as having the new one; any other multiplier is kept.
+
+### Fixed
+
+* **Bookmarks, and word and sentence positions, landed in the wrong place** in every text
+  after the first. The engine stamps its marks with a clock of its own that leaves out the
+  last sentence of each earlier text; each text now starts with a mark of its own and the
+  others are measured from it. A mark after the last full stop of a text, which the engine
+  drops, is now reported at the end of the text instead of never.
+* **The test sentence could be spoken by another product's voice.** "Speak a test
+  sentence", and the test offered at the end of setup, took any voice with "Infovox" in its
+  name, such as an Infovox 230 voice. They now recognise this engine's voices by its COM
+  class, and speak with an English one when one is installed: Larry, then Roger, then Lucy.
+* **Poul, the Danish voice, reported himself as female.** That came from the engine's own
+  voice list, which was plainly wrong; he is now male.
+
 ## 1.0.1
 
 Adds a configuration utility, and with it voices you define yourself. Also corrects two
