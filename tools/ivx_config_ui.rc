@@ -104,21 +104,21 @@ BEGIN
     LTEXT           "These settings belong to the &voice:", IDC_STATIC, 6, 9, 116, 8
     EDITTEXT        IDC_TEXT_FOR, 126, 7, 248, 13, ES_AUTOHSCROLL | ES_READONLY
 
-    GROUPBOX        "Pronunciation", IDC_STATIC, 6, 26, 368, 92
+    GROUPBOX        "Pronunciation", IDC_STATIC, 6, 26, 368, 88
     LTEXT           "&Word substitutions, one per line, written as word=replacement:",
                     IDC_STATIC, 12, 38, 240, 8
-    EDITTEXT        IDC_SUBSTITUTIONS, 12, 49, 356, 46, ES_MULTILINE | ES_WANTRETURN |
+    EDITTEXT        IDC_SUBSTITUTIONS, 12, 49, 356, 42, ES_MULTILINE | ES_WANTRETURN |
                     ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "Whole words only, ignoring case. The engine has no pronunciation tag of its own, so this is where a mispronounced word is fixed.", IDC_STATIC, 12, 99, 356, 16
+    LTEXT           "Whole words only, ignoring case. The engine has no pronunciation tag of its own, so this is where a mispronounced word is fixed.", IDC_STATIC, 12, 95, 356, 16
 
     GROUPBOX        "Reach of the rate and pitch controls in applications", IDC_STATIC,
-                    6, 122, 368, 46
-    LTEXT           "&Rate multiplier at the top of an application's slider:", IDC_STATIC,
-                    12, 136, 186, 8
-    EDITTEXT        IDC_RATE_SPAN, 202, 134, 40, 13, ES_AUTOHSCROLL
-    LTEXT           "&Pitch multiplier at the top of an application's slider:", IDC_STATIC,
-                    12, 152, 186, 8
-    EDITTEXT        IDC_PITCH_SPAN, 202, 150, 40, 13, ES_AUTOHSCROLL
+                    6, 118, 368, 50
+    LTEXT           "&Rate multiplier at the top of an application's slider, or 0 for the engine's whole range:",
+                    IDC_STATIC, 12, 130, 186, 16
+    EDITTEXT        IDC_RATE_SPAN, 202, 130, 40, 13, ES_AUTOHSCROLL
+    LTEXT           "&Pitch multiplier at the top of an application's slider, or 0 for the engine's whole range:",
+                    IDC_STATIC, 12, 148, 186, 16
+    EDITTEXT        IDC_PITCH_SPAN, 202, 148, 40, 13, ES_AUTOHSCROLL
 
     GROUPBOX        "How this voice describes itself", IDC_STATIC, 6, 172, 368, 60
     LTEXT           "&Language:", IDC_STATIC, 12, 187, 60, 8
@@ -142,7 +142,7 @@ STYLE DS_SETFONT | DS_CONTROL | WS_CHILD
 EXSTYLE WS_EX_CONTROLPARENT
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
-    GROUPBOX        "Events and voice list", IDC_STATIC, 6, 4, 368, 62
+    GROUPBOX        "Events, voice list and control tags", IDC_STATIC, 6, 4, 368, 75
     CONTROL         "Report &word boundaries, so a screen reader can follow the text",
                     IDC_WORD_EVENTS, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 12, 17, 356, 10
     CONTROL         "Report &sentence boundaries", IDC_SENTENCE_EVENTS, "Button",
@@ -153,26 +153,29 @@ BEGIN
     CONTROL         "Offer only the voices I &defined, and hide the sixteen built-in ones",
                     IDC_HIDE_BUILTIN, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,
                     12, 56, 356, 10
+    CONTROL         "Obey the engine's own &control tags in the text, such as \\Pit=30\\",
+                    IDC_CONTROL_TAGS, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,
+                    12, 69, 356, 10
 
-    GROUPBOX        "Logging", IDC_STATIC, 6, 70, 368, 40
-    LTEXT           "Detail written to the &log:", IDC_STATIC, 12, 85, 82, 8
-    COMBOBOX        IDC_LOG_LEVEL, 98, 83, 96, 120,
+    GROUPBOX        "Logging", IDC_STATIC, 6, 83, 368, 40
+    LTEXT           "Detail written to the &log:", IDC_STATIC, 12, 98, 82, 8
+    COMBOBOX        IDC_LOG_LEVEL, 98, 96, 96, 120,
                     CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON      "Open the log &folder", IDC_OPEN_LOGS, 202, 82, 80, 14
-    PUSHBUTTON      "Open the settings f&ile", IDC_OPEN_CONFIG, 288, 82, 82, 14
+    PUSHBUTTON      "Open the log &folder", IDC_OPEN_LOGS, 202, 95, 80, 14
+    PUSHBUTTON      "Open the settings f&ile", IDC_OPEN_CONFIG, 288, 95, 82, 14
 
     GROUPBOX        "Settings the engine accepts but was measured to ignore", IDC_STATIC,
-                    6, 114, 368, 46
+                    6, 127, 368, 46
     CONTROL         "Send the volume to the engine as we&ll as applying it to the audio",
                     IDC_SET_ENGINE_VOLUME, "Button", BS_AUTOCHECKBOX | WS_TABSTOP,
-                    12, 127, 356, 10
+                    12, 140, 356, 10
     CONTROL         "Set the SAPI 4 &real time attribute", IDC_REALTIME_ENABLE,
-                    "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 12, 142, 136, 10
-    LTEXT           "Real time val&ue:", IDC_STATIC, 154, 143, 54, 8
-    EDITTEXT        IDC_REALTIME, 212, 140, 44, 13, ES_NUMBER | ES_AUTOHSCROLL
+                    "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 12, 155, 136, 10
+    LTEXT           "Real time val&ue:", IDC_STATIC, 154, 156, 54, 8
+    EDITTEXT        IDC_REALTIME, 212, 153, 44, 13, ES_NUMBER | ES_AUTOHSCROLL
 
-    LTEXT           "What this engine was &measured to do:", IDC_STATIC, 6, 165, 140, 8
-    EDITTEXT        IDC_ENGINE_REPORT, 6, 176, 368, 40, ES_MULTILINE | ES_READONLY |
+    LTEXT           "What this engine was &measured to do:", IDC_STATIC, 6, 178, 140, 8
+    EDITTEXT        IDC_ENGINE_REPORT, 6, 189, 368, 27, ES_MULTILINE | ES_READONLY |
                     ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
 
     LTEXT           "Settings are stored &in:", IDC_STATIC, 6, 222, 74, 8

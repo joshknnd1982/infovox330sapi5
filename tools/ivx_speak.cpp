@@ -55,6 +55,27 @@ std::wstring token_attribute(ISpObjectToken* token, const wchar_t* name)
     return result;
 }
 
+const wchar_t kEngineClsid[] = L"{61B158B8-3639-4B87-8944-9D55320C6F80}";
+
+bool ours(ISpObjectToken* token)
+{
+    LPWSTR clsid = nullptr;
+    const bool match = SUCCEEDED(token->GetStringValue(L"CLSID", &clsid)) && clsid &&
+                       _wcsicmp(clsid, kEngineClsid) == 0;
+    CoTaskMemFree(clsid);
+    return match;
+}
+
+// Larry, then Roger, then Lucy, then whichever voice comes first.
+int preference(ISpObjectToken* token)
+{
+    if (!token_attribute(token, L"InfovoxBaseSpeaker").empty()) {
+        return 3;
+    }
+    const std::wstring speaker = token_attribute(token, L"InfovoxSpeaker");
+    return speaker == L"Larry" ? 0 : (speaker == L"Roger" ? 1 : (speaker == L"Lucy" ? 2 : 3));
+}
+
 }  // namespace
 
 int wmain(int argc, wchar_t** argv)
@@ -125,6 +146,7 @@ int wmain(int argc, wchar_t** argv)
     tokens->GetCount(&count);
 
     ISpObjectToken* chosen = nullptr;
+    int chosen_preference = 4;
     int infovox_count = 0;
 
     for (ULONG i = 0; i < count; ++i) {
@@ -135,7 +157,7 @@ int wmain(int argc, wchar_t** argv)
         const std::wstring description = token_description(token);
         const std::wstring language = token_attribute(token, L"Language");
         const std::wstring vendor = token_attribute(token, L"Vendor");
-        const bool is_ours = description.find(L"Infovox") != std::wstring::npos;
+        const bool is_ours = ours(token);
         if (is_ours) {
             ++infovox_count;
         }
@@ -146,13 +168,17 @@ int wmain(int argc, wchar_t** argv)
         }
 
         const bool matches =
-            voice_filter.empty()
-                ? is_ours
-                : (description.find(voice_filter) != std::wstring::npos ||
-                   token_attribute(token, L"InfovoxSpeaker") == voice_filter);
-        if (!chosen && matches) {
+            is_ours && (voice_filter.empty() ||
+                        description.find(voice_filter) != std::wstring::npos ||
+                        token_attribute(token, L"InfovoxSpeaker") == voice_filter);
+        const int rank = voice_filter.empty() ? preference(token) : 0;
+        if (matches && rank < chosen_preference) {
+            if (chosen) {
+                chosen->Release();
+            }
             chosen = token;
             chosen->AddRef();
+            chosen_preference = rank;
         }
         token->Release();
     }

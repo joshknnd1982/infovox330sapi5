@@ -45,6 +45,22 @@ DWORD AttrRange::scaled_from(DWORD base, double factor) const
     return static_cast<DWORD>(value);
 }
 
+DWORD AttrRange::stepped_from(DWORD base, int step) const
+{
+    if (!supported || max_value <= min_value) {
+        return default_value;
+    }
+    base = (std::max)(min_value, (std::min)(max_value, base));
+    step = (std::max)(-10, (std::min)(10, step));
+    if (step == 0 || base == 0) {
+        return base;
+    }
+    const double from = static_cast<double>(base);
+    const double to = static_cast<double>(step > 0 ? max_value : (std::max)(min_value, 1ul));
+    const double value = from * std::pow(to / from, (step > 0 ? step : -step) / 10.0) + 0.5;
+    return (std::max)(min_value, (std::min)(max_value, static_cast<DWORD>(value)));
+}
+
 DWORD AttrRange::clamped(int value) const
 {
     if (!supported || value < 0) {

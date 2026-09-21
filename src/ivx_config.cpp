@@ -176,10 +176,18 @@ void apply_voice_key(VoiceSettings& v, const std::wstring& key, const std::wstri
         v.pitch = to_int(value, -1);
     } else if (iequals(key, L"Volume")) {
         v.volume = to_int(value, 100);
+    } else if (iequals(key, L"RateReach")) {
+        v.rate_span = to_double(value, 0.0);
+    } else if (iequals(key, L"PitchReach")) {
+        v.pitch_span = to_double(value, 0.0);
     } else if (iequals(key, L"RateSpan")) {
-        v.rate_span = to_double(value, 3.0);
+        // Written before RateReach and PitchReach, when every saved voice carried the old
+        // defaults, 3 and 2.
+        const double span = to_double(value, 0.0);
+        v.rate_span = span == 3.0 ? 0.0 : span;
     } else if (iequals(key, L"PitchSpan")) {
-        v.pitch_span = to_double(value, 2.0);
+        const double span = to_double(value, 0.0);
+        v.pitch_span = span == 2.0 ? 0.0 : span;
     } else if (iequals(key, L"Prefix")) {
         v.prefix = value;
     } else if (iequals(key, L"Substitutions")) {
@@ -203,9 +211,9 @@ void write_voice_keys(std::wstring& out, const VoiceSettings& v)
     _snwprintf_s(buf, _TRUNCATE, L"%d", v.volume);
     out += L"Volume=" + std::wstring(buf) + L"\r\n";
     _snwprintf_s(buf, _TRUNCATE, L"%.3f", v.rate_span);
-    out += L"RateSpan=" + std::wstring(buf) + L"\r\n";
+    out += L"RateReach=" + std::wstring(buf) + L"\r\n";
     _snwprintf_s(buf, _TRUNCATE, L"%.3f", v.pitch_span);
-    out += L"PitchSpan=" + std::wstring(buf) + L"\r\n";
+    out += L"PitchReach=" + std::wstring(buf) + L"\r\n";
     out += L"Prefix=" + v.prefix + L"\r\n";
     out += L"Substitutions=" + encode_substitutions(v.substitutions) + L"\r\n";
     out += L"Language=" + v.language + L"\r\n";
@@ -291,6 +299,8 @@ void parse(const std::wstring& text, Config& cfg)
                     cfg.engine.software_volume = to_bool(value, true);
                 } else if (iequals(key, L"HideBuiltInVoices")) {
                     cfg.engine.hide_builtin = to_bool(value, false);
+                } else if (iequals(key, L"ControlTags")) {
+                    cfg.engine.control_tags = to_bool(value, true);
                 } else if (iequals(key, L"SetEngineVolume")) {
                     cfg.engine.set_engine_volume = to_bool(value, false);
                 } else if (iequals(key, L"RealTime")) {
@@ -378,7 +388,7 @@ void refresh_locked(bool force)
 
 bool VoiceSettings::is_default() const
 {
-    return rate < 0 && pitch < 0 && volume == 100 && rate_span == 3.0 && pitch_span == 2.0 &&
+    return rate < 0 && pitch < 0 && volume == 100 && rate_span == 0.0 && pitch_span == 0.0 &&
            prefix.empty() && substitutions.empty() && language.empty() && gender.empty() &&
            age.empty();
 }
@@ -469,6 +479,7 @@ bool save_config(const Config& cfg)
            L"\r\n";
     out += std::wstring(L"HideBuiltInVoices=") + (cfg.engine.hide_builtin ? L"1" : L"0") +
            L"\r\n";
+    out += std::wstring(L"ControlTags=") + (cfg.engine.control_tags ? L"1" : L"0") + L"\r\n";
     out += std::wstring(L"SetEngineVolume=") + (cfg.engine.set_engine_volume ? L"1" : L"0") +
            L"\r\n";
     wchar_t buf[64];

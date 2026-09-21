@@ -481,8 +481,8 @@ void store_current()
 
     const double rate_span = _wtof(get_text(g_app.page[1], IDC_RATE_SPAN).c_str());
     const double pitch_span = _wtof(get_text(g_app.page[1], IDC_PITCH_SPAN).c_str());
-    s->rate_span = rate_span > 0.0 ? rate_span : 3.0;
-    s->pitch_span = pitch_span > 0.0 ? pitch_span : 2.0;
+    s->rate_span = rate_span > 0.0 ? rate_span : 0.0;
+    s->pitch_span = pitch_span > 0.0 ? pitch_span : 0.0;
 
     const auto combo_value = [](HWND parent, int id, const std::vector<std::wstring>& values) {
         const LRESULT index = SendDlgItemMessageW(parent, id, CB_GETCURSEL, 0, 0);
@@ -995,6 +995,8 @@ void load_engine_page()
                    e.software_volume ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(g_app.page[2], IDC_HIDE_BUILTIN,
                    e.hide_builtin ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(g_app.page[2], IDC_CONTROL_TAGS,
+                   e.control_tags ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(g_app.page[2], IDC_SET_ENGINE_VOLUME,
                    e.set_engine_volume ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(g_app.page[2], IDC_REALTIME_ENABLE,
@@ -1012,6 +1014,7 @@ void store_engine_page()
     e.sentence_events = IsDlgButtonChecked(g_app.page[2], IDC_SENTENCE_EVENTS) == BST_CHECKED;
     e.software_volume = IsDlgButtonChecked(g_app.page[2], IDC_SOFTWARE_VOLUME) == BST_CHECKED;
     e.hide_builtin = IsDlgButtonChecked(g_app.page[2], IDC_HIDE_BUILTIN) == BST_CHECKED;
+    e.control_tags = IsDlgButtonChecked(g_app.page[2], IDC_CONTROL_TAGS) == BST_CHECKED;
     e.set_engine_volume =
         IsDlgButtonChecked(g_app.page[2], IDC_SET_ENGINE_VOLUME) == BST_CHECKED;
     e.realtime = IsDlgButtonChecked(g_app.page[2], IDC_REALTIME_ENABLE) == BST_CHECKED
